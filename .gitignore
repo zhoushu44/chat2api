@@ -29,6 +29,12 @@ start-demo.bat
 # 缓存
 tiktoken-cache/
 __pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+*.egg-info/
+chatgpt2api/data/
 
 # 私有仓：灰度直用文件可带密钥（放最后，覆盖前面的兜底规则）
 !deploy/gray/data/accounts.json

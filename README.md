@@ -1,3 +1,10 @@
+# ChatGPT2API（Python 原版 ＋ Go 生图替换）
+
+> **当前状态（2026-09-08，tag 1.0）：M1 生图链路本地真实打通，可灰度。**
+> 本仓＝线上 Python v2.7.0 全源码（`chatgpt2api/`）＋ Go 替换件（根目录 Go 工程，M1 生图真实可用，其余模块 mock 中）。
+> 灰度上线走 `deploy/gray/`（新容器 `:3077`，老 Python `:3000` 不动），步骤见该目录 README。
+> 进度总表见 [`进度.md`](进度.md)。下面是早期的 Go 工程说明（mock 压测数字仅供参考，不代表真实链路）：
+
 # ChatGPT2API Go v2.7.0
 
 > Python v2.7.0 (27k行) → Go 单二进制（目标）。**⚠️ 骨架阶段，P0 接线已完成（2026-09-02）**——完成度审计见 [TASKS.md](TASKS.md)：`/v1` 生图已走真实链路（orchestrator→backend→antibot PoW）、面板路由与静态 SPA 已挂载、服务树在 `api.NewServer` 组装；纯文本 chat/responses 尚未实现（P2）。性能数字来自 mock 上游压测，不代表真实链路。
