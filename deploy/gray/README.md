@@ -2,8 +2,9 @@
 
 ## 1. 传仓到服务器
 
-整仓（`chatgpt2api-go/`）传到服务器，`data/`、`localtest-data/`、`*.exe`、`*.log`、
-`accounts*`、`config.json` 都被 `.gitignore` 挡掉不会进仓（`git status` 自查）。
+整仓（`chatgpt2api-go/`）传到服务器。私有仓：`deploy/gray/data/` 的
+`config.json`（灰度 key）与单号 `accounts.json` 直接进仓，开箱即用；
+`localtest-data/`、根目录账号 dumps、`*.exe`、`*.log` 仍被 `.gitignore` 隔离。
 `deploy/gray/data/` 里只进仓 `config.example.json` 模板。
 
 ## 2. 服务器上准备灰度 data（示例）

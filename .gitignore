@@ -13,9 +13,7 @@ localtest*.log
 /data/
 /localtest-data/
 
-# 灰度 data：只跟踪模板，真实账号与密钥绝不进仓
-deploy/gray/data/*.json
-!deploy/gray/data/config.example.json
+# 灰度 data：config.example.json 为模板一并跟踪；localtest 与根目录账号 dumps 仍隔离
 
 # 账号与密钥（任何形式，兜底）
 accounts*.json
@@ -31,3 +29,7 @@ start-demo.bat
 # 缓存
 tiktoken-cache/
 __pycache__/
+
+# 私有仓：灰度直用文件可带密钥（放最后，覆盖前面的兜底规则）
+!deploy/gray/data/accounts.json
+!deploy/gray/data/config.json
