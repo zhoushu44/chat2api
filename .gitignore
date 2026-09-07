@@ -1,0 +1,33 @@
+# 构建产物
+*.exe
+*.exe~
+*.out
+/bin/
+
+# 本地运行日志
+*.log
+server.log
+localtest*.log
+
+# 本地测试数据（含账号 token，绝不进仓）
+/data/
+/localtest-data/
+
+# 灰度 data：只跟踪模板，真实账号与密钥绝不进仓
+deploy/gray/data/*.json
+!deploy/gray/data/config.example.json
+
+# 账号与密钥（任何形式，兜底）
+accounts*.json
+accounts*.csv
+accounts*.txt
+*token*.json
+register.json
+localtest-config.json
+
+# 本地演示脚本（含密钥，仅本机用）
+start-demo.bat
+
+# 缓存
+tiktoken-cache/
+__pycache__/

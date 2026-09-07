@@ -1,0 +1,13 @@
+version: "3.8"
+services:
+  chatgpt2api-go:
+    build: .
+    ports:
+      - "3000:3000"
+      - "6060:6060"
+    volumes:
+      - ./data:/data
+    environment:
+      - STORAGE_BACKEND=json
+      - CHATGPT2API_AUTH_KEY=
+    restart: unless-stopped

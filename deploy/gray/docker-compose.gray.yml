@@ -1,0 +1,17 @@
+version: "3.8"
+# M1 灰度：老 Python 容器（:3000）不动，Go 跑 :3100，/data 独立卷。
+# 构建上下文是仓库根（../../ == chatgpt2api-go），服务器上整仓传过去直接 build。
+services:
+  chatgpt2api-go-gray:
+    build: ../..
+    image: chatgpt2api-go:gray
+    container_name: chatgpt2api-go-gray
+    ports:
+      - "3100:3000"
+      - "6061:6060"
+    volumes:
+      - ./data:/data
+    environment:
+      - STORAGE_BACKEND=json
+      - CHATGPT2API_AUTH_KEY=${GRAY_AUTH_KEY:?set GRAY_AUTH_KEY env}
+    restart: unless-stopped
