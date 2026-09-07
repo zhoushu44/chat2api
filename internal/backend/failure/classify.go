@@ -1,7 +1,8 @@
 package failure
 
 import (
-"strings"
+	"errors"
+	"strings"
 )
 
 // FailurePolicy 对应 Python FailurePolicy
@@ -76,6 +77,11 @@ func Classify(err error, statusCode int, body string) ImageFailure {
 	msg := ""
 	if err != nil {
 		msg = err.Error()
+	}
+	// 结构化上游错误：按真实状态码归类（errors.As 解 wrap 链；文本可能不含关键词）
+	var sc interface{ UpstreamStatus() int }
+	if errors.As(err, &sc) && sc.UpstreamStatus() == 401 {
+		return New("auth_invalid", msg)
 	}
 	msg = strings.ToLower(msg + " " + strings.ToLower(body))
 	switch {

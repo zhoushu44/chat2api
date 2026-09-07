@@ -142,12 +142,16 @@ func (o *Orchestrator) GenerateStream(ctx context.Context, req GenerateRequest, 
 		lastErr = err
 		emit(ImageOutput{Kind: ImageOutputMessage, Index: attempt, Total: attempts, Text: err.Error(), AccountEmail: acc.Email})
 		f := classifyFailure(err)
+		o.Pool.Release(acc)
+		if isAuthFailure(f) {
+			o.deactivateAccount(acc)
+			excluded[acc.Token] = true
+			continue
+		}
 		if !f.SwitchAccount() {
-			o.Pool.Release(acc)
 			break
 		}
 		o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
-		o.Pool.Release(acc)
 		excluded[acc.Token] = true
 	}
 	if lastErr != nil {

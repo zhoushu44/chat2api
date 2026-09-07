@@ -64,9 +64,22 @@ func (a *fhttpAdapter) Do(req *fhttp.Request) (*fhttp.Response, error) {
 
 // mockChatGPT 完整模拟官网所有生图相关端点
 func mockChatGPT() *httptest.Server {
+	return httptest.NewServer(chatGPTHandler(nil))
+}
+
+// chatGPTHandler 生图 mock 处理器；authFail 非空时命中 token 一律 401（除名测试用）。
+func chatGPTHandler(authFail map[string]bool) http.Handler {
 	var pollCount int
 	convID := "conv-e2e-123"
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(authFail) > 0 {
+			tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if authFail[tok] {
+				w.WriteHeader(401)
+				_, _ = w.Write([]byte(`{"detail":"token invalidated"}`))
+				return
+			}
+		}
 		switch {
 		case r.Method == "GET" && r.URL.Path == "/":
 			w.Write([]byte(`<html data-build="build-e2e"><script src="https://chatgpt.com/c/abc/_/sdk.js"></script></html>`))
@@ -154,7 +167,83 @@ func mockChatGPT() *httptest.Server {
 		default:
 			json.NewEncoder(w).Encode(map[string]any{})
 		}
-	}))
+	})
+}
+
+// TestE2E_AuthInvalidRemovesAccount M4 除名接线：坏号先被选中→401→除名→换健康号成功。
+func TestE2E_AuthInvalidRemovesAccount(t *testing.T) {
+	srv := httptest.NewServer(chatGPTHandler(map[string]bool{"tok-bad": true}))
+	defer srv.Close()
+	adapter := &fhttpAdapter{c: srv.Client()}
+
+	dir := t.TempDir()
+	svc := account.New(dir)
+	okAcc := &account.Account{ID: "ok1", Token: "tok-ok", Email: "ok@example.com", Type: "Plus", SourceType: "web", Status: account.StatusNormal, Quota: 10}
+	badAcc := &account.Account{ID: "bad1", Token: "tok-bad", Email: "bad@example.com", Type: "Plus", SourceType: "web", Status: account.StatusNormal, Quota: 10}
+	_ = svc.Add(okAcc)
+	_ = svc.Add(badAcc)
+
+	pool := account.NewPool(nil, 5*time.Minute)
+	// Add 顺序 = shard 分配顺序（首个进 shard1，新池首次 Pick 命中 shard1）
+	// → bad 先加保证第一次 Pick 命中坏号
+	pool.Add(badAcc)
+	pool.Add(okAcc)
+
+	orch := protocol.NewOrchestrator(pool)
+	orch.Accounts = svc
+	orch.Backends["tok-ok"] = backend.NewBackendWithClient(srv.URL, "tok-ok", adapter)
+	orch.Backends["tok-bad"] = backend.NewBackendWithClient(srv.URL, "tok-bad", adapter)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	res, err := orch.Generate(ctx, protocol.GenerateRequest{Prompt: "a cat", Model: "gpt-image-2", N: 1})
+	if err != nil {
+		t.Fatalf("Generate should succeed via healthy account: %v", err)
+	}
+	if len(res.URLs) == 0 && len(res.B64) == 0 {
+		t.Fatal("no result")
+	}
+	// 断言：坏号已从池移除、svc 持久化为失效
+	pooled := pool.List()
+	for _, a := range pooled {
+		if a.Token == "tok-bad" {
+			t.Fatal("bad account still in pool")
+		}
+	}
+	reloaded := account.New(dir)
+	for _, a := range reloaded.List() {
+		if a.Token == "tok-bad" && a.Status != account.StatusDisabled {
+			t.Fatalf("bad account not persisted as disabled: %+v", a)
+		}
+	}
+}
+
+// TestE2E_AuthInvalidOnlyAllDead 全池坏号：Generate 报错且池被清空。
+func TestE2E_AuthInvalidOnlyAllDead(t *testing.T) {
+	srv := httptest.NewServer(chatGPTHandler(map[string]bool{"tok-bad": true}))
+	defer srv.Close()
+	adapter := &fhttpAdapter{c: srv.Client()}
+
+	dir := t.TempDir()
+	svc := account.New(dir)
+	badAcc := &account.Account{ID: "bad1", Token: "tok-bad", Email: "bad@example.com", Type: "Plus", SourceType: "web", Status: account.StatusNormal, Quota: 10}
+	_ = svc.Add(badAcc)
+	pool := account.NewPool(nil, 5*time.Minute)
+	pool.Add(badAcc)
+
+	orch := protocol.NewOrchestrator(pool)
+	orch.Accounts = svc
+	orch.Backends["tok-bad"] = backend.NewBackendWithClient(srv.URL, "tok-bad", adapter)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	_, err := orch.Generate(ctx, protocol.GenerateRequest{Prompt: "a cat", Model: "gpt-image-2", N: 1})
+	if err == nil {
+		t.Fatal("all-dead pool must error")
+	}
+	if n := len(pool.List()); n != 0 {
+		t.Fatalf("pool not emptied: %d left", n)
+	}
 }
 
 func TestE2E_FullImagePipeline_RealMock(t *testing.T) {

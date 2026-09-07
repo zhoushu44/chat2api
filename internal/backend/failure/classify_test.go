@@ -2,6 +2,7 @@ package failure
 
 import (
 "errors"
+"fmt"
 "testing"
 )
 
@@ -93,4 +94,19 @@ f4 := Classify(errors.New("upstream_text_reply: nope"), 0, "")
 if f4.Code != "upstream_text_reply" || f4.StatusCode != 400 || f4.SwitchAccount() {
 t.Error("text reply should be request-scope 400 without switch")
 }
+}
+
+// fakeUpstreamErr 模拟带状态码的结构化错误（UpstreamHTTPError/antibot statusErr 的共同接口）。
+type fakeUpstreamErr struct{ code int }
+
+func (e *fakeUpstreamErr) Error() string       { return "upstream failed: status=401" }
+func (e *fakeUpstreamErr) UpstreamStatus() int { return e.code }
+
+// 401 经多层 wrap 后仍应归类 auth_invalid（errors.As 解链）。
+func TestClassifyWrapped401(t *testing.T) {
+	err := fmt.Errorf("all accounts failed: %w", fmt.Errorf("bootstrap: %w", &fakeUpstreamErr{code: 401}))
+	f := Classify(err, 0, err.Error())
+	if f.Code != "auth_invalid" {
+		t.Fatalf("wrapped 401 code=%q want auth_invalid", f.Code)
+	}
 }

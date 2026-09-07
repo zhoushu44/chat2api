@@ -96,6 +96,10 @@ func (w *Watcher) RunOnce() (renewed, added, removed int) {
 	}
 	for id, a := range storedByID {
 		if _, ok := pooledByID[id]; !ok {
+			// 失效号不加回（除名语义：只在池内被移除后保持移除）
+			if a.Status == StatusDisabled {
+				continue
+			}
 			w.pool.Add(a)
 			added++
 		}

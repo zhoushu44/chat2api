@@ -7,6 +7,7 @@ import (
 	"log"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"chatgpt2api/internal/account"
@@ -24,6 +25,8 @@ type Orchestrator struct {
 	Pool     *account.Pool
 	Backends map[string]*backend.Backend // token -> backend（mu 保护，OPT-8 并行 slot 并发读写）
 	mu       sync.Mutex
+	// Accounts 账号持久化（可选）：auth 失效时标失效并落盘，watcher 下一轮同步移除。
+	Accounts *account.Service
 	Logger   *logsvc.Service
 	Metrics  *metrics.Metrics // 仪表盘指标（P1.7，可为 nil）
 	Config   struct {
@@ -31,6 +34,26 @@ type Orchestrator struct {
 		Concurrency int
 		Proxy       string // 出站代理（P2.7：config.EffectiveProxy 注入，backend tls-client 透传）
 	}
+}
+
+// deactivateAccount 运行中 auth 失效除名：标失效 + 落盘 + 移出池。
+// 调用方需已 Release 该账号；幂等（已移除则跳过）。
+func (o *Orchestrator) deactivateAccount(acc *account.Account) {
+	if acc == nil {
+		return
+	}
+	acc.Status = account.StatusDisabled
+	if o.Accounts != nil {
+		_ = o.Accounts.Add(acc)
+	}
+	if o.Pool != nil {
+		o.Pool.Remove(acc.Token)
+	}
+}
+
+// isAuthFailure 是否 auth 类失效（401/token 无效）——这类失败除名而非冷却。
+func isAuthFailure(f failure.ImageFailure) bool {
+	return f.Code == "auth_invalid"
 }
 
 // getBackend 取号池账号对应的 backend（懒创建，线程安全）。
@@ -98,24 +121,45 @@ func (o *Orchestrator) Warmup(ctx context.Context) int {
 	if o == nil || o.Pool == nil {
 		return 0
 	}
-	warmed := 0
-	for _, acc := range o.Pool.List() {
-		be, err := o.getBackend(acc)
-		if err != nil {
-			log.Printf("[warmup] backend %s: %v", acc.Email, err)
-			continue
-		}
-		acctCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		err = be.Bootstrap(acctCtx)
-		cancel()
-		if err != nil {
-			log.Printf("[warmup] bootstrap %s: %v", acc.Email, err)
-			continue
-		}
-		warmed++
+	// 并发预热（默认 8 路）：71 号池串行要 5 分钟（每号 ~4s），并发窗口内可全部完成。
+	// 已在缓存 TTL 内的号跳过（幂等，重入只补冷的）。
+	limit := o.Config.Concurrency
+	if limit < 1 {
+		limit = 1
 	}
-	log.Printf("[warmup] done warmed=%d", warmed)
-	return warmed
+	if limit > 8 {
+		limit = 8
+	}
+	var warmed atomic.Int32
+	sem := make(chan struct{}, limit)
+	var wg sync.WaitGroup
+	for _, acc := range o.Pool.List() {
+		wg.Add(1)
+		go func(acct *account.Account) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			be, err := o.getBackend(acct)
+			if err != nil {
+				log.Printf("[warmup] backend %s: %v", acct.Email, err)
+				return
+			}
+			if be.BootstrapFresh() {
+				return // 缓存内：跳过
+			}
+			acctCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
+			err = be.RefreshBootstrap(acctCtx)
+			cancel()
+			if err != nil {
+				log.Printf("[warmup] bootstrap %s: %v", acct.Email, err)
+				return
+			}
+			warmed.Add(1)
+		}(acc)
+	}
+	wg.Wait()
+	log.Printf("[warmup] done warmed=%d", warmed.Load())
+	return int(warmed.Load())
 }
 
 func (o *Orchestrator) Generate(ctx context.Context, req GenerateRequest) (*GenerateResult, error) {
@@ -283,13 +327,18 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		}
 		lastErr = err
 		f := failure.Classify(err, 0, err.Error())
+		o.Pool.Release(acc)
+		if isAuthFailure(f) {
+			// token 死号：除名（标失效+落盘+移池），不冷却、不重复选
+			o.deactivateAccount(acc)
+			excluded[acc.Token] = true
+			continue
+		}
 		if !f.SwitchAccount() {
-			o.Pool.Release(acc)
 			break
 		}
 		// 冷却
 		o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
-		o.Pool.Release(acc)
 		excluded[acc.Token] = true
 	}
 	if lastErr != nil {
@@ -331,12 +380,16 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 			o.recordTextMetrics(req, genStart, err)
 			lastErr = err
 			f := failure.Classify(err, 0, err.Error())
+			o.Pool.Release(acc)
+			if isAuthFailure(f) {
+				o.deactivateAccount(acc)
+				excluded[acc.Token] = true
+				continue
+			}
 			if !f.SwitchAccount() {
-				o.Pool.Release(acc)
 				break
 			}
 			o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
-			o.Pool.Release(acc)
 			excluded[acc.Token] = true
 			continue
 		}
@@ -362,12 +415,16 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 		}
 		lastErr = streamErr
 		f := failure.Classify(streamErr, 0, streamErr.Error())
+		o.Pool.Release(acc)
+		if isAuthFailure(f) {
+			o.deactivateAccount(acc)
+			excluded[acc.Token] = true
+			continue
+		}
 		if !f.SwitchAccount() {
-			o.Pool.Release(acc)
 			break
 		}
 		o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
-		o.Pool.Release(acc)
 		excluded[acc.Token] = true
 	}
 	if lastErr != nil {

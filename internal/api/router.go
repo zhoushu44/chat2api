@@ -62,6 +62,7 @@ func NewServer(cfg *config.Config) *Server {
 		pool.Add(a)
 	}
 	orch := protocol.NewOrchestrator(pool)
+	orch.Accounts = accountsSvc // auth 失效除名落盘（watcher 同步移除）
 	orch.Logger = logsvc.NewWithDir(dataDir, 1000)
 	metSvc := metrics.NewWithDir(dataDir)
 	orch.Metrics = metSvc

@@ -27,6 +27,19 @@ type httpDoer interface {
 	Do(req *fhttp.Request) (*fhttp.Response, error)
 }
 
+// upstreamStatusErr 带状态码错误：failure.Classify 用 UpstreamStatus() 接口按码归类。
+type upstreamStatusErr struct {
+	code int
+	msg  string
+}
+
+func (e *upstreamStatusErr) Error() string            { return e.msg }
+func (e *upstreamStatusErr) UpstreamStatus() int      { return e.code }
+
+func statusErrf(code int, format string, args ...any) error {
+	return &upstreamStatusErr{code: code, msg: fmt.Sprintf(format, args...)}
+}
+
 // Bootstrap 拉取首页并解析 PoW 资源（对等 _bootstrap）。
 func Bootstrap(ctx context.Context, client httpDoer, baseURL string, headers http.Header) ([]string, string, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -43,7 +56,7 @@ func Bootstrap(ctx context.Context, client httpDoer, baseURL string, headers htt
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, "", fmt.Errorf("bootstrap failed: status=%d body=%s", resp.StatusCode, string(body)[:minInt(500, len(body))])
+		return nil, "", statusErrf(resp.StatusCode, "bootstrap failed: status=%d body=%s", resp.StatusCode, string(body)[:minInt(500, len(body))])
 	}
 	sources, build := ParsePowResources(string(body))
 	if len(sources) == 0 {
@@ -83,7 +96,7 @@ func GetChatRequirements(ctx context.Context, client httpDoer, baseURL, basePath
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("chat_requirements_prepare failed: status=%d body=%s", resp.StatusCode, truncateBody(respBody))
+		return nil, statusErrf(resp.StatusCode, "chat_requirements_prepare failed: status=%d body=%s", resp.StatusCode, truncateBody(respBody))
 	}
 	var prep struct {
 		PrepareToken string `json:"prepare_token"`
@@ -134,7 +147,7 @@ func GetChatRequirements(ctx context.Context, client httpDoer, baseURL, basePath
 		return nil, err
 	}
 	if resp2.StatusCode < 200 || resp2.StatusCode >= 300 {
-		return nil, fmt.Errorf("chat_requirements_finalize failed: status=%d body=%s", resp2.StatusCode, truncateBody(respBody2))
+		return nil, statusErrf(resp2.StatusCode, "chat_requirements_finalize failed: status=%d body=%s", resp2.StatusCode, truncateBody(respBody2))
 	}
 	var fin struct {
 		Token   string `json:"token"`

@@ -17,8 +17,10 @@ import (
 	"syscall"
 	"time"
 
+	"chatgpt2api/internal/account"
 	"chatgpt2api/internal/api"
 	"chatgpt2api/internal/autotune"
+	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/provider"
 	"chatgpt2api/internal/register"
@@ -52,8 +54,18 @@ func main() {
 
 	regSvc := register.NewWithDir(cfg.DataDir)
 	srv.Register = regSvc
-	// 启动每日 401 验活调度器，对齐 abai core/scheduler.py
-	sched := scheduler.New(nil, cfg.Scheduler.Hour, cfg.Scheduler.Concurrency, cfg.Scheduler.Timezone, cfg.Scheduler.Enabled)
+	// 启动每日 401 验活调度器，对齐 abai core/scheduler.py；探针用 backend /me
+	sched := scheduler.New(srv.Pool, cfg.Scheduler.Hour, cfg.Scheduler.Concurrency, cfg.Scheduler.Timezone, cfg.Scheduler.Enabled)
+	sched.Svc = srv.Accounts
+	sched.CheckValid = func(a *account.Account) bool {
+		acctCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		be, err := backend.NewBackend(a.Token, a.FP, cfg.EffectiveProxy())
+		if err != nil {
+			return false
+		}
+		return be.VerifyToken(acctCtx) == nil
+	}
 	sched.Start()
 	defer sched.Stop()
 

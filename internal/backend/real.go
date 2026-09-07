@@ -35,6 +35,12 @@ func (b *Backend) Bootstrap(ctx context.Context) error {
 // bootstrapTTL 预热复用窗口：官网首页 HTML 很少变化，窗口内跳过新区 GET（~2s/图）。
 const bootstrapTTL = 10 * time.Minute
 
+// BootstrapFresh 预热是否在复用窗口内（导出：warmup/探测跳过缓存命中号）。
+func (b *Backend) BootstrapFresh() bool { return b.bootstrapFresh() }
+
+// RefreshBootstrap 强制刷新预热并更新时间戳（导出）。
+func (b *Backend) RefreshBootstrap(ctx context.Context) error { return b.refreshBootstrap(ctx) }
+
 // bootstrapFresh 预热是否在复用窗口内（调用方决定跳过还是刷新）。
 func (b *Backend) bootstrapFresh() bool {
 	b.mu.Lock()

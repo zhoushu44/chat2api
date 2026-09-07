@@ -55,8 +55,7 @@ type UpstreamHTTPError struct {
 
 // Error 实现 error 接口，消息格式对齐 helper.py:183：
 // "{context} failed: status={status_code}, body={body_str}"，body 截断 500 字符。
-func (e *UpstreamHTTPError) Error() string {
-	var bodyStr string
+func (e *UpstreamHTTPError) Error() string {	var bodyStr string
 	switch v := e.Body.(type) {
 	case nil:
 		bodyStr = ""
@@ -76,6 +75,9 @@ func (e *UpstreamHTTPError) Error() string {
 	}
 	return fmt.Sprintf("%s failed: status=%d, body=%s", e.Context, e.StatusCode, bodyStr)
 }
+
+// UpstreamStatus 供 failure.Classify 按状态码归类（接口方法名避开字段同名）。
+func (e *UpstreamHTTPError) UpstreamStatus() int { return e.StatusCode }
 
 // ensureOK 校验上游响应为 2xx，非 2xx 时返回 *UpstreamHTTPError
 // （对等 utils/helper.py:186-211）。

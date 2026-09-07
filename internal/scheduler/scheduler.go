@@ -3,6 +3,7 @@ package scheduler
 import (
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"chatgpt2api/internal/account"
@@ -14,6 +15,8 @@ import (
 type Scheduler struct {
 	Pool        *account.Pool
 	Scheduler   *account.Scheduler
+	Svc         *account.Service            // 可选：验活失效账号落盘（StatusDisabled）
+	CheckValid  func(a *account.Account) bool // 可选：验活探测；nil 时仅日志占位
 	Hour        int
 	Concurrency int
 	Enabled     bool
@@ -118,12 +121,51 @@ func (s *Scheduler) checkDaily() {
 		return
 	}
 	s.mu.Unlock()
-	// 触发 401 验活：此处仅日志 + 标记，实际验活由 account.Pool 配合外部 checkValid 实现
-	log.Printf("[Scheduler] 触发 %s 的 401验活，并发 %d", date, s.Concurrency)
+	// 触发 401 验活
+	removed := s.doDaily401()
+	log.Printf("[Scheduler] %s 401验活完成，失效移除 %d", date, removed)
 	s.mu.Lock()
 	s.lastDailyDate = date
 	s.mu.Unlock()
-	// 可扩展：遍历 Pool 中 lifecycle=registered/trial/subscribed 的账号，异步 checkValid
+}
+
+// doDaily401 真实验活：CheckValid 探测失败 → 标失效 + 落盘 + 移出池。
+// 返回移除数；CheckValid 为 nil 时返回 -1（占位未接线，兼容旧行为日志）。
+func (s *Scheduler) doDaily401() int {
+	if s.Pool == nil {
+		return -1
+	}
+	if s.CheckValid == nil {
+		return -1
+	}
+	accs := s.Pool.List()
+	concurrency := s.Concurrency
+	if concurrency < 1 {
+		concurrency = 1
+	}
+	sem := make(chan struct{}, concurrency)
+	var removed atomic.Int32
+	var wg sync.WaitGroup
+	for _, a := range accs {
+		wg.Add(1)
+		go func(acc *account.Account) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			if s.CheckValid(acc) {
+				return
+			}
+			log.Printf("[Scheduler] 401验活失败，移除账号 %s", acc.Email)
+			acc.Status = account.StatusDisabled
+			if s.Svc != nil {
+				_ = s.Svc.Add(acc)
+			}
+			s.Pool.Remove(acc.Token)
+			removed.Add(1)
+		}(a)
+	}
+	wg.Wait()
+	return int(removed.Load())
 }
 
 // CheckDailyForTest 供单测：传入指定时间判断是否触发
