@@ -1,13 +1,15 @@
 version: "3.8"
-# M1 灰度：老 Python 容器（:3000）不动，Go 跑 :3100，/data 独立卷。
-# 构建上下文是仓库根（../../ == chatgpt2api-go），服务器上整仓传过去直接 build。
+# M1 灰度：老 Python 容器（:3000）不动，Go 跑 :3077，/data 独立卷。
+# 构建上下文是仓库根（../.. == chatgpt2api-go），服务器上整仓传过去直接 build。
+# 容器内监听 :3077（entrypoint 覆盖镜像默认 :3000），宿主映射 3077:3077。
 services:
   chatgpt2api-go-gray:
     build: ../..
     image: chatgpt2api-go:gray
     container_name: chatgpt2api-go-gray
+    entrypoint: ["/chatgpt2api-go", "-config", "/data/config.json", "-addr", ":3077"]
     ports:
-      - "3100:3000"
+      - "3077:3077"
       - "6061:6060"
     volumes:
       - ./data:/data

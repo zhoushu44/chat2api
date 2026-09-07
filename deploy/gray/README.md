@@ -10,12 +10,13 @@
 ## 2. 服务器上准备灰度 data（示例）
 
 ```bash
+git clone https://github.com/zhoushu44/chat2api.git /root/chatgpt2api-go-gray-src
 mkdir -p /root/chatgpt2api-go-gray
-cp -r deploy/gray/* /root/chatgpt2api-go-gray/
+cp -r /root/chatgpt2api-go-gray-src/deploy/gray/* /root/chatgpt2api-go-gray/
 cd /root/chatgpt2api-go-gray
 cp data/config.example.json data/config.json
 # 按模板填 auth-key；proxy 留空（服务器出口干净，直连）
-# accounts.json：放入测过的单号（Go 格式，与 localtest-data/accounts.json 同构）
+# accounts.json 已随仓播种测过的单号（私有仓），如需换号直接替换该文件
 ```
 
 ## 3. 构建并启动（服务器上，Dockerfile 已在仓内）
@@ -23,14 +24,14 @@ cp data/config.example.json data/config.json
 ```bash
 GRAY_AUTH_KEY=实际灰度密钥 docker compose -f docker-compose.gray.yml build
 GRAY_AUTH_KEY=实际灰度密钥 docker compose -f docker-compose.gray.yml up -d
-docker logs -f chatgpt2api-go-gray   # 看到 listening on :3000 即起
+docker logs -f chatgpt2api-go-gray   # 看到 listening on :3077 即起
 ```
 
-## 4. 验证（老 :3000 不动，新 :3100）
+## 4. 验证（老 :3000 不动，新 :3077）
 
 ```bash
-curl http://127.0.0.1:3100/healthz
-curl -H "Authorization: Bearer $GRAY_AUTH_KEY" http://127.0.0.1:3100/v1/models
+curl http://127.0.0.1:3077/healthz
+curl -H "Authorization: Bearer $GRAY_AUTH_KEY" http://127.0.0.1:3077/v1/models
 # generations n=1 真图（b64 可解码）即 M1 灰度通过
 ```
 
