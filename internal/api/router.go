@@ -310,26 +310,106 @@ func (s *Server) handleDashboard(c *gin.Context) {
 	} else {
 		summary = map[string]any{"time_range": timeRange, "labels": []string{}, "series": []any{}, "total": map[string]any{}}
 	}
-	// 账号健康度（对等 account_healthy：有活跃或不限额账号）
-	active, total := 0, 0
+	// 账号统计（对等 account_service.get_stats + dashboard.accounts 形状）
+	acc := gin.H{
+		"total": 0, "cumulative_total": 0, "active": 0, "limited": 0, "abnormal": 0,
+		"disabled": 0, "total_quota": 0, "unlimited_quota_count": 0, "unknown_quota_count": 0,
+		"total_success": 0, "total_fail": 0, "by_type": map[string]int{}, "healthy": false,
+	}
+	byType := map[string]int{}
 	if s.Accounts != nil {
 		for _, a := range s.Accounts.List() {
-			total++
-			if a.Status == account.StatusNormal {
-				active++
+			acc["total"] = acc["total"].(int) + 1
+			typ := a.Type
+			if typ == "" {
+				typ = a.PlanType
+			}
+			if typ == "" {
+				typ = "unknown"
+			}
+			byType[typ]++
+			if a.QuotaUnknown {
+				acc["unknown_quota_count"] = acc["unknown_quota_count"].(int) + 1
+			} else if a.Quota < 0 {
+				acc["unlimited_quota_count"] = acc["unlimited_quota_count"].(int) + 1
+			} else {
+				acc["total_quota"] = acc["total_quota"].(int) + a.Quota
+			}
+			switch a.Status {
+			case account.StatusNormal:
+				acc["active"] = acc["active"].(int) + 1
+			case account.StatusLimited:
+				acc["limited"] = acc["limited"].(int) + 1
+			case account.StatusDisabled:
+				acc["disabled"] = acc["disabled"].(int) + 1
+			default:
+				if a.ValidityStatus == "invalid" {
+					acc["abnormal"] = acc["abnormal"].(int) + 1
+				} else {
+					acc["active"] = acc["active"].(int) + 1
+				}
 			}
 		}
 	}
+	acc["cumulative_total"] = acc["total"]
+	acc["by_type"] = byType
+	active := acc["active"].(int)
 	healthy := active > 0
+	acc["healthy"] = healthy
 	status := "ok"
 	if !healthy {
 		status = "degraded"
 	}
+	// 调用统计（对等 logs 段：total/success/failed/by_model/recent_failures/trend）
+	logs := gin.H{
+		"total": 0, "success": 0, "failed": 0, "text_review": 0,
+		"by_model": map[string]int{}, "by_status": map[string]int{},
+		"recent_failures": []map[string]any{}, "source": "dashboard_metrics", "trend": summary,
+	}
+	byModel := map[string]int{}
+	byStatus := map[string]int{}
+	var recent []map[string]any
+	if s.LogSvc != nil {
+		for _, lc := range s.LogSvc.List() {
+			model := lc.Model
+			if model == "" {
+				model = "unknown"
+			}
+			byModel[model]++
+			st := "success"
+			if lc.Status != "success" {
+				st = "failed"
+			}
+			byStatus[st]++
+			logs["total"] = logs["total"].(int) + 1
+			logs[st] = logs[st].(int) + 1
+			if st == "failed" && len(recent) < 10 {
+				code := ""
+				if len(lc.Attempts) > 0 {
+					code = lc.Attempts[0].Code
+				}
+				recent = append(recent, map[string]any{
+					"id": lc.ID, "time": lc.CreatedAt.Format("2006-01-02 15:04:05"),
+					"summary": lc.Model + " 调用失败", "model": lc.Model,
+					"status": "failed", "error_code": code,
+				})
+			}
+		}
+	}
+	logs["by_model"] = byModel
+	logs["by_status"] = byStatus
+	logs["recent_failures"] = recent
 	c.JSON(http.StatusOK, gin.H{
-		"status":         status,
-		"healthy":        healthy,
-		"account_active": active,
-		"account_total":  total,
-		"metrics":        summary,
+		"status":   status,
+		"healthy":  healthy,
+		"version":  "v2.7.0-go",
+		"accounts": acc,
+		"storage": gin.H{
+			"backend": "json",
+			"health":  true,
+			"images":  map[string]any{},
+		},
+		"logs":    logs,
+		"metrics": summary,
 	})
 }
