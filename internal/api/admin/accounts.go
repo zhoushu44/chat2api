@@ -73,15 +73,28 @@ func (h *AccountsHandler) List(c *gin.Context) {
 		end = total
 	}
 	pageItems := filtered[start:end]
-	// 映射为前端期望的 AccountListItem
+	// 映射为前端期望的 AccountListItem（键集对齐 Python _account_for_api 全量字典，
+	// 前端 Accounts 页重度引用 access_token/source_type/quota/status/type 等键）
 	items := make([]map[string]any, 0, len(pageItems))
 	for i, a := range pageItems {
 		items = append(items, map[string]any{
 			"id":                       i + start + 1,
 			"email":                    a.Email,
+			"access_token":             a.Token,
+			"token":                    a.Token,
+			"refresh_token":            a.RefreshToken,
 			"password":                 "", // 不暴露明文
 			"has_refresh_token":        a.RefreshToken != "",
 			"refresh_token_status":     map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
+			"type":                     a.Type,
+			"plan_type":                a.PlanType,
+			"source_type":              a.SourceType,
+			"status":                   a.Status,
+			"quota":                    a.Quota,
+			"quota_unknown":            a.QuotaUnknown,
+			"pending_auth_scope":       a.PendingAuthScope,
+			"user_id":                  "",
+			"proxy":                    "",
 			"chatimage_invalid_401":    a.ValidityStatus == "invalid",
 			"chatimage_import_status":  "not_imported",
 			"validity_status":          a.ValidityStatus,
@@ -92,6 +105,7 @@ func (h *AccountsHandler) List(c *gin.Context) {
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
+		"items":      items,
 		"data":       items,
 		"total":      total,
 		"page":       page,
