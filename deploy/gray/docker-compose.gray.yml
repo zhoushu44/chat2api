@@ -2,6 +2,12 @@ version: "3.8"
 # M1 灰度：老 Python 容器（:3000）不动，Go 跑 :3077，/data 独立卷。
 # 构建上下文是仓库根（../.. == chatgpt2api-go），服务器上整仓传过去直接 build。
 # 容器内监听 :3077（entrypoint 覆盖镜像默认 :3000），宿主映射 3077:3077。
+#
+# 注册修复（2026-09-09）：
+#   原 Go 灰度容器孤立在 gray_default 网络，既未 join regiforge_default、
+#   也未注入 REGIFORGE_BASE_URL，故默认 http://regiforge:8787 在容器内 DNS 解析失败。
+#   修复=join 外部网络 regiforge_default（regiforge 主机名可解析到 172.24.0.2），
+#   并注入与 Python 原版(:3000) 完全一致的 REGIFORGE_* 环境变量，注册链路对齐。
 services:
   chatgpt2api-go-gray:
     build: ../..
@@ -16,4 +22,18 @@ services:
     environment:
       - STORAGE_BACKEND=json
       - CHATGPT2API_AUTH_KEY=${GRAY_AUTH_KEY:?set GRAY_AUTH_KEY env}
+      # --- 注册：与 Python 原版 :3000 env 探测值逐字一致 ---
+      - REGIFORGE_BASE_URL=http://regiforge:8787
+      - REGIFORGE_PROJECT_ID=chatgpt_register
+      - REGIFORGE_PROXY_ID=wary
+      - REGIFORGE_EMAIL_ID=mailnest
+    networks:
+      - default
+      - regiforge_default
     restart: unless-stopped
+
+networks:
+  default:
+    driver: bridge
+  regiforge_default:
+    external: true

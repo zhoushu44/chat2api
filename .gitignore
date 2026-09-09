@@ -36,6 +36,9 @@ venv/
 *.egg-info/
 chatgpt2api/data/
 
+# WorkBuddy 工作区数据（会话记忆/任务，不入仓）
+.workbuddy/
+
 # 私有仓：灰度直用文件可带密钥（放最后，覆盖前面的兜底规则）
 !deploy/gray/data/accounts.json
 !deploy/gray/data/config.json
