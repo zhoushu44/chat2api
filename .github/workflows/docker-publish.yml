@@ -1,0 +1,44 @@
+name: Build & Push Docker Image
+
+# push 到 main / master 自动构建并推送到 Docker Hub；本地不执行任何推送
+on:
+  push:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+env:
+  IMAGE: zhoushu1/chat2api
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 登录 Docker Hub（凭证从 GitHub Secrets 读取）
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: 构建并推送镜像（4.0 + latest 同一镜像）
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            zhoushu1/chat2api:4.0
+            zhoushu1/chat2api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 推送结果
+        run: |
+          echo "::notice::已推送完成"
+          echo "  zhoushu1/chat2api:4.0"
+          echo "  zhoushu1/chat2api:latest"
+          echo "拉取: docker pull zhoushu1/chat2api:latest"

@@ -1,0 +1,46 @@
+# === 敏感数据 / 账号（绝不进镜像）===
+data/
+localtest-data/
+deploy/gray/data/
+accounts*.json
+accounts*.csv
+accounts*.txt
+*token*.json
+register.json
+localtest-config.json
+
+# === 本地二进制 / 备份 / 日志 ===
+*.exe
+*.exe~
+*.out
+*.log
+*.bak*
+
+# === VCS / IDE / 缓存 / 临时 ===
+.git/
+.github/
+.workbuddy/
+.vscode/
+.idea/
+bin/
+tiktoken-cache/
+__pycache__/
+*.py[cod]
+
+# === 文档 / 本地脚本（构建不需要）===
+docs/
+*.md
+start-demo.bat
+localtest-proxy.py
+localtest-*.py
+localtest-*.log
+localtest-*.json
+
+# === Docker compose / CI / Make（构建不需要）===
+docker-compose*.yml
+Makefile
+
+# === Python 原版源码（Go 镜像不需要，省体积）===
+chatgpt2api/
+
+# 保留构建必需：go.mod go.sum cmd/ internal/ web_dist/ Dockerfile

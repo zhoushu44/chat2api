@@ -9,7 +9,8 @@ FROM alpine:3.19
 RUN apk --no-cache add ca-certificates
 COPY --from=builder /chatgpt2api-go /chatgpt2api-go
 COPY web_dist /web_dist
-EXPOSE 3000 6060
+EXPOSE 3077 6060
 VOLUME ["/data"]
 ENV STORAGE_BACKEND=json
-ENTRYPOINT ["/chatgpt2api-go", "-config", "/data/config.json", "-addr", ":3000"]
+# 监听 0.0.0.0:3077（Go net/http 中 -addr ":3077" 绑定所有网卡）
+ENTRYPOINT ["/chatgpt2api-go", "-config", "/data/config.json", "-addr", ":3077"]
