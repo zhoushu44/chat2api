@@ -1,0 +1,49 @@
+{
+  "name": "chatgpt2api-console",
+  "private": true,
+  "version": "2.1.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean:dist && vite build",
+    "typecheck": "tsc",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@iconify/vue": "^5.0.0",
+    "autoprefixer": "^10.4.23",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.19",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.2"
+  },
+  "dependencies": {
+    "@vitejs/plugin-vue": "^6.0.6",
+    "axios": "^1.15.0",
+    "nanocat-ui": "^0.1.6",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4",
+    "vue-virtual-scroller": "^2.0.0-beta.8"
+  },
+  "overrides": {
+    "micromatch": {
+      "picomatch": "2.3.2"
+    },
+    "anymatch": {
+      "picomatch": "2.3.2"
+    },
+    "vite": {
+      "picomatch": "4.0.4",
+      "tinyglobby": {
+        "picomatch": "4.0.4"
+      }
+    },
+    "sucrase": {
+      "tinyglobby": {
+        "picomatch": "4.0.4"
+      }
+    }
+  }
+}

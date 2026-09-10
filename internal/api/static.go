@@ -8,9 +8,8 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-//go:embed web_dist
-// 目录模式会跳过 _ 开头文件，Vite 公共 chunk 必须显式嵌入，否则 SPA 按 index.html 回退导致 import 失败
-//go:embed web_dist/assets/_plugin-vue_export-helper-DlAUqK2U.js
+//go:embed all:web_dist
+// all: 前缀嵌入包括 _ 开头在内的全部文件（Vite 公共 chunk 曾因目录模式跳过 _ 文件导致 SPA import 失败）
 var embeddedFS embed.FS
 
 // Static registers embedded FS with SPA fallback.

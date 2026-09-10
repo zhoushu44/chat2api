@@ -14,6 +14,26 @@ const panelAppVersion = "v2.7.0-go"
 // RegisterAuthPanel 注册面板登录接口（开放组，接口内部自行鉴权）。
 func RegisterAuthPanel(r *gin.RouterGroup, s *Server) {
 	r.POST("/auth/login", func(c *gin.Context) {
+		// 兼容前端 body 提交：header 无 token 时，从 body 读 key/api_key/password 作 Bearer
+		if s.requestToken(c) == "" {
+			var body struct {
+				Key      string `json:"key"`
+				APIKey   string `json:"api_key"`
+				Password string `json:"password"`
+			}
+			if err := c.ShouldBindJSON(&body); err == nil {
+				tok := body.Key
+				if tok == "" {
+					tok = body.APIKey
+				}
+				if tok == "" {
+					tok = body.Password
+				}
+				if tok != "" {
+					c.Request.Header.Set("Authorization", "Bearer "+tok)
+				}
+			}
+		}
 		id, name, role, ok := s.resolvePanelIdentity(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": gin.H{

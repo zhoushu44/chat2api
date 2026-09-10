@@ -17,6 +17,7 @@ func (h *ProviderHandler) Register(r *gin.RouterGroup) {
 	r.GET("/provider_settings", h.ListSettings)
 	r.GET("/provider_settings/:type", h.ListSettingsByType)
 	r.PUT("/provider_settings/:type/:key", h.UpsertSetting)
+	r.POST("/provider_settings/:type/:key/test", h.TestSetting)
 }
 
 func (h *ProviderHandler) ListDefs(c *gin.Context) {
@@ -90,4 +91,39 @@ func (h *ProviderHandler) UpsertSetting(c *gin.Context) {
 	}
 	provider.UpsertSetting(s)
 	c.JSON(http.StatusOK, gin.H{"ok": true, "data": s})
+}
+
+// TestSetting 测试 provider 配置连通性（warp 测代理、mailnest 测 key）
+func (h *ProviderHandler) TestSetting(c *gin.Context) {
+	t := provider.Type(c.Param("type"))
+	key := c.Param("key")
+	if err := provider.Validate(t, key); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	var body struct {
+		Config map[string]any `json:"config"`
+	}
+	_ = c.ShouldBindJSON(&body)
+	if body.Config == nil {
+		body.Config = map[string]any{}
+	}
+	// 合并已保存配置，body 覆盖（支持先保存后测试，或直接测试）
+	if exist, _ := provider.GetSetting(t, key); exist != nil {
+		for k, v := range exist.Config {
+			if _, ok := body.Config[k]; !ok {
+				body.Config[k] = v
+			}
+		}
+	}
+	var res testResult
+	switch {
+	case t == provider.TypeProxy && key == "warp":
+		res = testProxyWarp(body.Config)
+	case t == provider.TypeMailbox && key == "mailnest":
+		res = testMailboxMailnest(body.Config)
+	default:
+		res = testResult{OK: false, Message: "暂不支持测试此 provider: " + string(t) + "/" + key}
+	}
+	c.JSON(http.StatusOK, gin.H{"ok": res.OK, "message": res.Message, "detail": res.Detail})
 }

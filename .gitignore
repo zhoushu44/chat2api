@@ -22,6 +22,7 @@ accounts*.txt
 *token*.json
 register.json
 localtest-config.json
+m9-config.json
 
 # 本地演示脚本（含密钥，仅本机用）
 start-demo.bat
@@ -42,3 +43,7 @@ chatgpt2api/data/
 # 私有仓：灰度直用文件可带密钥（放最后，覆盖前面的兜底规则）
 !deploy/gray/data/accounts.json
 !deploy/gray/data/config.json
+
+# 前端 web-vue（源码入仓，node_modules/dist 不入）
+web-vue/node_modules/
+web-vue/dist/
