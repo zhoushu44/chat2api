@@ -27,14 +27,14 @@ jobs:
       - name: 设置 Buildx（docker-container driver，支持 GHA 缓存）
         uses: docker/setup-buildx-action@v3
 
-      - name: 构建并推送镜像（4.0 + latest 同一镜像）
+      - name: 构建并推送镜像（5.0 + latest 同一镜像）
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            zhoushu1/chat2api:4.0
+            zhoushu1/chat2api:5.0
             zhoushu1/chat2api:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
@@ -42,6 +42,6 @@ jobs:
       - name: 推送结果
         run: |
           echo "::notice::已推送完成"
-          echo "  zhoushu1/chat2api:4.0"
+          echo "  zhoushu1/chat2api:5.0"
           echo "  zhoushu1/chat2api:latest"
           echo "拉取: docker pull zhoushu1/chat2api:latest"
