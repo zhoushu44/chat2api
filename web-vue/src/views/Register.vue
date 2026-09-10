@@ -316,6 +316,23 @@
                       />
                     </label>
 
+                    <!-- 迈巢邮箱：内联测试按钮 -->
+                    <div v-if="providerType(provider) === 'mailnest'" class="register-field register-field--full">
+                      <div class="register-provider-actions">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          :disabled="registerConfig.enabled || testingProviderIndex === index"
+                          @click="testProviderInline(index, provider)"
+                        >
+                          {{ testingProviderIndex === index ? '测试中…' : '测试连通' }}
+                        </Button>
+                        <span v-if="providerTestResults[index]" class="register-provider-test-result" :class="{ 'is-ok': providerTestResults[index]?.ok }">
+                          {{ providerTestResults[index]?.ok ? '✓' : '✗' }} {{ providerTestResults[index]?.message }}<span v-if="providerTestResults[index]?.detail"> · {{ providerTestResults[index]?.detail }}</span>
+                        </span>
+                      </div>
+                    </div>
+
                     <label v-if="providerUsesDefaultDomain(provider)" class="register-field">
                       <span class="register-label">默认域名</span>
                       <Input
@@ -565,6 +582,64 @@
                   </details>
                 </div>
               </FormSection>
+
+          <FormSection title="代理配置" density="roomy">
+            <p class="register-provider-config-hint">
+              注册任务使用的代理 provider（当前=Warp 代理）。测试会经代理访问公网返回出口 IP 与延迟。
+            </p>
+            <div class="register-form-grid register-form-grid--two">
+              <label class="register-field">
+                <span class="register-label">代理类型</span>
+                <GroupedSelectMenu
+                  :model-value="proxyProviderKey"
+                  :groups="proxyProviderGroups"
+                  selected-indicator="none"
+                  :disabled="registerConfig?.enabled || proxySaving || proxyTesting"
+                  block
+                  @update:model-value="onProxyProviderChange"
+                />
+              </label>
+            </div>
+            <div v-if="proxyCurrentDef" class="register-form-grid register-form-grid--two">
+              <label v-for="field in proxyCurrentDef.fields" :key="field.name" class="register-field">
+                <span class="register-label">
+                  {{ field.label || field.name }}{{ field.required ? ' *' : '' }}
+                </span>
+                <Input
+                  v-model.trim="proxyConfig[field.name]"
+                  block
+                  root-class="font-mono"
+                  :type="field.input_type === 'secret' ? 'text' : 'text'"
+                  :placeholder="field.placeholder || ''"
+                  :disabled="registerConfig?.enabled || proxySaving || proxyTesting"
+                />
+              </label>
+            </div>
+            <div v-else-if="!proxyLoading" class="register-provider-empty">
+              该 provider 无字段配置。
+            </div>
+            <div class="register-provider-actions">
+              <Button
+                size="sm"
+                variant="ghost"
+                :disabled="!proxyCurrentDef || proxyTesting || proxySaving || registerConfig?.enabled"
+                @click="testProxyProvider"
+              >
+                {{ proxyTesting ? '测试中…' : '测试' }}
+              </Button>
+              <Button
+                size="sm"
+                variant="primary"
+                :disabled="!proxyCurrentDef || proxySaving || proxyTesting || registerConfig?.enabled"
+                @click="saveProxyProvider"
+              >
+                {{ proxySaving ? '保存中…' : '保存' }}
+              </Button>
+            </div>
+            <p v-if="proxyTestResult" class="register-provider-test-result" :class="{ 'is-ok': proxyTestResult.ok }">
+              {{ proxyTestResult.ok ? '✓' : '✗' }} {{ proxyTestResult.message }}<span v-if="proxyTestResult.detail"> · {{ proxyTestResult.detail }}</span>
+            </p>
+          </FormSection>
             </div>
           </FormSection>
         </div>
@@ -624,10 +699,11 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Button, Checkbox, Input } from 'nanocat-ui'
 import type { ActionMenuItem } from 'nanocat-ui'
-import { proxyApi } from '@/api'
+import { proxyApi, providerApi } from '@/api'
 import { getAuthToken } from '@/api/client'
 import { parseProxyReference, serializeProxyReference, type ProxyGroup } from '@/api/proxy'
 import { registerApi, type LegacyRegisterConfig, type OutlookMailboxParseStats, type RegisterProvider } from '@/api/register'
+import { type ProviderDef, type ProviderFieldDef, type ProviderSetting, type ProviderTestResult } from '@/api/provider'
 import { FloatingActionMenu, FormSection, MetaChip, MetricStrip, PageLoadingState, PagePanel, PanelHeader, RuntimeLogPanel, StateBadge, StateBlock, SurfaceBox, type RuntimeLogPanelLine } from '@/components/ai'
 import GroupedSelectMenu from '@/components/ui/GroupedSelectMenu.vue'
 import { useConfirmDialog } from '@/composables/useConfirmDialog'
@@ -648,6 +724,242 @@ const proxyGroups = ref<ProxyGroup[]>([])
 const registerProxyMode = ref<RegisterProxyMode>('global')
 const selectedRegisterProxyGroupId = ref('')
 const customRegisterProxyInput = ref('')
+
+// ===== 邮箱/代理 provider 配置框（迈巢 + warp，可扩展）=====
+const mailboxDefs = ref<ProviderDef[]>([])
+const proxyProviderDefs = ref<ProviderDef[]>([])
+const mailboxProviderKey = ref('mailnest')
+const proxyProviderKey = ref('warp')
+const mailboxConfig = ref<Record<string, string>>({})
+const proxyConfig = ref<Record<string, string>>({})
+const mailboxLoading = ref(false)
+const proxyLoading = ref(false)
+const mailboxSaving = ref(false)
+const proxySaving = ref(false)
+const mailboxTesting = ref(false)
+const proxyTesting = ref(false)
+const mailboxTestResult = ref<ProviderTestResult | null>(null)
+const proxyTestResult = ref<ProviderTestResult | null>(null)
+
+// 内联测试：在邮箱来源卡片内测试 provider 连通
+const testingProviderIndex = ref<number | null>(null)
+const providerTestResults = ref<Record<number, ProviderTestResult | null>>({})
+
+const mailboxProviderGroups = computed(() => [{
+  options: mailboxDefs.value.map((d) => ({ value: d.key, label: d.label || d.key })),
+}])
+const proxyProviderGroups = computed(() => [{
+  options: proxyProviderDefs.value.map((d) => ({ value: d.key, label: d.label || d.key })),
+}])
+const mailboxCurrentDef = computed(() => mailboxDefs.value.find((d) => d.key === mailboxProviderKey.value) || null)
+const proxyCurrentDef = computed(() => proxyProviderDefs.value.find((d) => d.key === proxyProviderKey.value) || null)
+
+function applyProviderFields(def: ProviderDef | null, target: Record<string, string>) {
+  if (!def || !Array.isArray(def.fields)) return
+  for (const field of def.fields) {
+    if (!(field.name in target)) target[field.name] = ''
+  }
+}
+
+function buildConfigFromFields(def: ProviderDef | null, source: Record<string, string>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  if (!def || !Array.isArray(def.fields)) return out
+  for (const field of def.fields) {
+    const raw = String(source[field.name] ?? '').trim()
+    out[field.name] = raw
+  }
+  return out
+}
+
+function fillConfigFromSetting(setting: ProviderSetting | undefined, def: ProviderDef | null, target: Record<string, string>) {
+  const cfg = (setting?.config || {}) as Record<string, unknown>
+  if (!def || !Array.isArray(def.fields)) return
+  for (const field of def.fields) {
+    target[field.name] = String(cfg[field.name] ?? field.default ?? '')
+  }
+}
+
+function onMailboxProviderChange(value: string) {
+  mailboxProviderKey.value = value
+  mailboxTestResult.value = null
+  applyProviderFields(mailboxCurrentDef.value, mailboxConfig.value)
+  void loadMailboxSetting()
+}
+
+function onProxyProviderChange(value: string) {
+  proxyProviderKey.value = value
+  proxyTestResult.value = null
+  applyProviderFields(proxyCurrentDef.value, proxyConfig.value)
+  void loadProxySetting()
+}
+
+async function loadProviderDefinitions() {
+  mailboxLoading.value = true
+  proxyLoading.value = true
+  try {
+    const res = await providerApi.listDefinitions()
+    const data = res?.data || {}
+    mailboxDefs.value = Array.isArray(data.mailbox) ? data.mailbox.filter((d) => d && String(d.key || '').trim()) : []
+    proxyProviderDefs.value = Array.isArray(data.proxy) ? data.proxy.filter((d) => d && String(d.key || '').trim()) : []
+    if (!mailboxDefs.value.some((d) => d.key === mailboxProviderKey.value) && mailboxDefs.value[0]) {
+      mailboxProviderKey.value = mailboxDefs.value[0].key
+    }
+    if (!proxyProviderDefs.value.some((d) => d.key === proxyProviderKey.value) && proxyProviderDefs.value[0]) {
+      proxyProviderKey.value = proxyProviderDefs.value[0].key
+    }
+    applyProviderFields(mailboxCurrentDef.value, mailboxConfig.value)
+    applyProviderFields(proxyCurrentDef.value, proxyConfig.value)
+  } catch (error: any) {
+    toast.error(error?.message || '加载 provider 定义失败')
+  } finally {
+    mailboxLoading.value = false
+    proxyLoading.value = false
+  }
+}
+
+async function loadProviderSettings() {
+  try {
+    const res = await providerApi.listSettings()
+    const data = res?.data || {}
+    const mailboxList = Array.isArray(data.mailbox) ? data.mailbox : []
+    const proxyList = Array.isArray(data.proxy) ? data.proxy : []
+
+    // 回填到独立配置框 ref（代理配置框仍用）
+    const mailboxSetting = mailboxList.find((s) => s && s.key === mailboxProviderKey.value)
+    fillConfigFromSetting(mailboxSetting, mailboxCurrentDef.value, mailboxConfig.value)
+    const proxySetting = proxyList.find((s) => s && s.key === proxyProviderKey.value)
+    fillConfigFromSetting(proxySetting, proxyCurrentDef.value, proxyConfig.value)
+
+    // 首次使用（provider_settings 为空）时给 warp 预填默认值
+    if (!proxySetting && proxyProviderKey.value === 'warp') {
+      if (!proxyConfig.value.url) proxyConfig.value.url = 'socks5://192.6.121.16:11010'
+    }
+
+    // 回填到邮箱来源 providers 列表：用已保存的 provider_settings 覆盖 api_base/api_key
+    if (registerConfig.value?.mail?.providers) {
+      for (const provider of registerConfig.value.mail.providers) {
+        const ptype = provider.type || ''
+        if (!ptype) continue
+        const saved = mailboxList.find((s) => s && s.key === ptype)
+        if (saved?.config) {
+          const cfg = saved.config as Record<string, unknown>
+          if (cfg.url) provider.api_base = String(cfg.url)
+          if (cfg.api_key) provider.api_key = String(cfg.api_key)
+        }
+      }
+    }
+  } catch {
+    // 安静失败：无保存配置时用空字段
+  }
+}
+
+async function loadMailboxSetting() {
+  try {
+    const res = await providerApi.listSettings()
+    const data = res?.data || {}
+    const list = Array.isArray(data.mailbox) ? data.mailbox : []
+    const setting = list.find((s) => s && s.key === mailboxProviderKey.value)
+    fillConfigFromSetting(setting, mailboxCurrentDef.value, mailboxConfig.value)
+  } catch {
+    // ignore
+  }
+}
+
+async function loadProxySetting() {
+  try {
+    const res = await providerApi.listSettings()
+    const data = res?.data || {}
+    const list = Array.isArray(data.proxy) ? data.proxy : []
+    const setting = list.find((s) => s && s.key === proxyProviderKey.value)
+    fillConfigFromSetting(setting, proxyCurrentDef.value, proxyConfig.value)
+  } catch {
+    // ignore
+  }
+}
+
+async function saveMailboxProvider() {
+  const def = mailboxCurrentDef.value
+  if (!def) return
+  mailboxSaving.value = true
+  mailboxTestResult.value = null
+  try {
+    const config = buildConfigFromFields(def, mailboxConfig.value)
+    await providerApi.upsertSetting('mailbox', def.key, { type: 'mailbox', key: def.key, enabled: true, config })
+    toast.success('邮箱配置已保存')
+  } catch (error: any) {
+    toast.error(error?.message || '保存邮箱配置失败')
+  } finally {
+    mailboxSaving.value = false
+  }
+}
+
+async function saveProxyProvider() {
+  const def = proxyCurrentDef.value
+  if (!def) return
+  proxySaving.value = true
+  proxyTestResult.value = null
+  try {
+    const config = buildConfigFromFields(def, proxyConfig.value)
+    await providerApi.upsertSetting('proxy', def.key, { type: 'proxy', key: def.key, enabled: true, config })
+    toast.success('代理配置已保存')
+  } catch (error: any) {
+    toast.error(error?.message || '保存代理配置失败')
+  } finally {
+    proxySaving.value = false
+  }
+}
+
+async function testMailboxProvider() {
+  const def = mailboxCurrentDef.value
+  if (!def) return
+  mailboxTesting.value = true
+  mailboxTestResult.value = null
+  try {
+    const config = buildConfigFromFields(def, mailboxConfig.value)
+    const res = await providerApi.testSetting('mailbox', def.key, config)
+    mailboxTestResult.value = res || { ok: false, message: '无返回' }
+  } catch (error: any) {
+    mailboxTestResult.value = { ok: false, message: error?.message || '测试请求失败' }
+  } finally {
+    mailboxTesting.value = false
+  }
+}
+
+// 内联测试：在邮箱来源卡片内测试选中的 provider 连通
+async function testProviderInline(index: number, provider: RegisterProvider) {
+  const type = providerType(provider)
+  if (!type) return
+  testingProviderIndex.value = index
+  providerTestResults.value[index] = null
+  try {
+    // 构建 config：从 provider 对象提取 api_base / api_key 等字段
+    const config: Record<string, string> = {}
+    if (provider.api_base) config.url = provider.api_base
+    if (provider.api_key) config.api_key = provider.api_key
+    const res = await providerApi.testSetting('mailbox', type, config)
+    providerTestResults.value[index] = res || { ok: false, message: '无返回' }
+  } catch (error: any) {
+    providerTestResults.value[index] = { ok: false, message: error?.message || '测试请求失败' }
+  } finally {
+    testingProviderIndex.value = null
+  }
+}
+
+async function testProxyProvider() {
+  const def = proxyCurrentDef.value
+  if (!def) return
+  proxyTesting.value = true
+  proxyTestResult.value = null
+  try {
+    const config = buildConfigFromFields(def, proxyConfig.value)
+    const res = await providerApi.testSetting('proxy', def.key, config)
+    proxyTestResult.value = res || { ok: false, message: '无返回' }
+  } catch (error: any) {
+    proxyTestResult.value = { ok: false, message: error?.message || '测试请求失败' }
+  } finally {
+    proxyTesting.value = false
+  }
+}
 
 const defaultRegisterConfig: LegacyRegisterConfig = {
   mail: {
@@ -1037,11 +1349,11 @@ function updateProviderField(index: number, key: string, value: unknown) {
 }
 
 function providerUsesApiBase(provider: RegisterProvider) {
-  return ['cloudmail_gen', 'cloudflare_temp_email', 'moemail', 'inbucket', 'yyds_mail', 'ddg_mail'].includes(providerType(provider))
+  return ['cloudmail_gen', 'cloudflare_temp_email', 'moemail', 'inbucket', 'yyds_mail', 'ddg_mail', 'mailnest'].includes(providerType(provider))
 }
 
 function providerUsesApiKey(provider: RegisterProvider) {
-  return ['tempmail_lol', 'moemail', 'duckmail', 'gptmail', 'yyds_mail'].includes(providerType(provider))
+  return ['tempmail_lol', 'moemail', 'duckmail', 'gptmail', 'yyds_mail', 'mailnest'].includes(providerType(provider))
 }
 
 function providerUsesAdminPassword(provider: RegisterProvider) {
@@ -1060,12 +1372,14 @@ function apiBaseLabel(provider: RegisterProvider) {
   const type = providerType(provider)
   if (type === 'cloudmail_gen') return 'CloudMail URL'
   if (type === 'ddg_mail') return 'CF API Base'
+  if (type === 'mailnest') return '迈巢 API Base'
   return 'API Base'
 }
 
 function apiBasePlaceholder(provider: RegisterProvider) {
   const type = providerType(provider)
   if (type === 'yyds_mail') return 'https://maliapi.215.im/v1'
+  if (type === 'mailnest') return 'http://mailnest:8787'
   return ''
 }
 
@@ -1218,7 +1532,7 @@ function syncRegisterProxyControlsFromValue(value: unknown) {
 
 function setRegisterProxyMode(mode: string) {
   if (mode === 'warp') {
-    customRegisterProxyInput.value = 'socks5://warp-proxy:1080'
+    customRegisterProxyInput.value = 'socks5://192.6.121.16:11010'
     registerProxyMode.value = 'warp'
     if (registerConfig.value) {
       registerConfig.value.proxy = serializeProxyReference('custom', customRegisterProxyInput.value)
@@ -1506,7 +1820,17 @@ function normalizeLogLevel(level?: string) {
 }
 
 onMounted(async () => {
-  await Promise.all([loadRegisterConfig(), loadProxyGroups()])
+  await Promise.all([
+    loadRegisterConfig(),
+    loadProxyGroups(),
+    (async () => {
+      await loadProviderDefinitions()
+      // 等 registerConfig 加载完再回填 provider_settings 到 providers 列表
+      // loadRegisterConfig 是并行跑的，这里等它完成
+    })(),
+  ])
+  // 此时 registerConfig 已加载，安全回填 provider_settings
+  await loadProviderSettings()
   startLiveUpdates()
 })
 
@@ -1823,5 +2147,29 @@ onBeforeUnmount(() => {
   .register-runtime-actions {
     display: grid;
   }
+}
+
+.register-provider-config-hint {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #6b7280);
+  margin: 0 0 0.5rem;
+}
+.register-provider-empty {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted, #9ca3af);
+  padding: 0.5rem 0;
+}
+.register-provider-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.register-provider-test-result {
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--color-danger, #dc2626);
+}
+.register-provider-test-result.is-ok {
+  color: var(--color-success, #16a34a);
 }
 </style>

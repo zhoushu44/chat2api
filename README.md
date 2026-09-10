@@ -15,7 +15,7 @@
 
 ```bash
 # 稳定版
-docker pull zhoushu1/chat2api:5.0
+docker pull zhoushu1/chat2api:6.0
 # 最新版
 docker pull zhoushu1/chat2api:latest
 ```
@@ -178,7 +178,7 @@ go test ./... -cover
 
 ## 六、CI 自动构建（GitHub Action）
 
-push 到 `main` / `master` 自动构建并推送镜像到 Docker Hub：`zhoushu1/chat2api:5.0` + `:latest`（同一镜像双标签，由 Action 自动完成，本地不执行任何推送）。
+push 到 `main` / `master` 自动构建并推送镜像到 Docker Hub：`zhoushu1/chat2api:6.0` + `:latest`（同一镜像双标签，由 Action 自动完成，本地不执行任何推送）。
 **只需做一次**：在仓库 **Settings → Secrets and variables → Actions → New repository secret** 配两个 Secret：
 
 | Secret 名 | 值 |

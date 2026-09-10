@@ -47,3 +47,4 @@ chatgpt2api/data/
 # 前端 web-vue（源码入仓，node_modules/dist 不入）
 web-vue/node_modules/
 web-vue/dist/
+view-config.json

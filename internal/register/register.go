@@ -100,9 +100,10 @@ func placeholderMailProvider() map[string]any {
 	return map[string]any{
 		"id":             "regiforge-mailnest",
 		"enable":         true,
-		"type":           "gptmail",
+		"type":           "mailnest",
 		"key_mode":       "public",
-		"api_key":        "",
+		"api_base":       "https://mailnest.top",
+		"api_key":        "sk_xUAC_ZsIAXtDKHZzkJhpXx8QtxrorY8ASgc3xwZIoQ8",
 		"default_domain": "",
 		"local_compose":  false,
 	}
