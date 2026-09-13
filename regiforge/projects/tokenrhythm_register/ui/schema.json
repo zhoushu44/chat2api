@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "project_id": "tokenrhythm_register",
+  "summary": "基元律动 TokenRhythm 手机号注册，支持选择短信 Provider，产出 sk_tr_ API Key",
+  "required_captcha_types": ["slider"],
+  "allowed_captcha_ids": ["slider.aliyun"],
+  "allowed_email_ids": [],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "allowed_sms_ids": ["jichisms", "haozhuma"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "阿里云滑块验证码流程使用 browser_session 固定有头浏览器"
+  },
+  "fields": [
+    {
+      "key": "sms_timeout",
+      "label": "短信验证码超时（秒）",
+      "type": "number",
+      "config_path": "projects.tokenrhythm_register.sms_timeout",
+      "default": 120,
+      "min": 30,
+      "max": 600
+    },
+    {
+      "key": "captcha_timeout",
+      "label": "滑块出现超时（秒）",
+      "type": "number",
+      "config_path": "projects.tokenrhythm_register.captcha_timeout",
+      "default": 30,
+      "min": 5,
+      "max": 120
+    },
+    {
+      "key": "browser_channel",
+      "label": "浏览器 Channel",
+      "type": "text",
+      "config_path": "projects.tokenrhythm_register.browser_channel",
+      "default": "chrome",
+      "placeholder": "chrome"
+    },
+    {
+      "key": "browser_backend",
+      "label": "浏览器底座",
+      "type": "select",
+      "config_path": "projects.tokenrhythm_register.browser_backend",
+      "default": "playwright",
+      "options": [
+        {"value": "playwright", "label": "Playwright"},
+        {"value": "patchright", "label": "Patchright"}
+      ]
+    },
+    {
+      "key": "user_agent",
+      "label": "User-Agent（可选）",
+      "type": "text",
+      "config_path": "projects.tokenrhythm_register.user_agent",
+      "default": "",
+      "help": "留空使用实际 Chrome 的 User-Agent。"
+    }
+  ],
+  "steps": [
+    {"id": "step01_acquire_phone", "title": "获取手机号", "file": "steps/step01_acquire_phone.py", "desc": "通过所选 ctx.sms Provider 获取手机号"},
+    {"id": "step02_open_register", "title": "打开注册页", "file": "steps/step02_open_register.py", "desc": "打开 TokenRhythm 注册页并填写手机号"},
+    {"id": "step03_send_code", "title": "发送验证码", "file": "steps/step03_send_code.py", "desc": "点击发送短信验证码"},
+    {"id": "step04_solve_captcha", "title": "解决阿里云滑块", "file": "steps/step04_solve_captcha.py", "desc": "调用 slider.aliyun Provider 完成滑块"},
+    {"id": "step05_wait_sms", "title": "等待短信", "file": "steps/step05_wait_sms.py", "desc": "通过 ctx.sms 轮询 OTP"},
+    {"id": "step06_submit_code", "title": "填写验证码", "file": "steps/step06_submit_code.py", "desc": "填写短信 OTP"},
+    {"id": "step07_accept_agreement", "title": "同意协议", "file": "steps/step07_accept_agreement.py", "desc": "勾选用户协议"},
+    {"id": "step08_submit_register", "title": "提交注册", "file": "steps/step08_submit_register.py", "desc": "提交并等待成功页"},
+    {"id": "step09_fetch_apikey", "title": "提取 API Key", "file": "steps/step09_fetch_apikey.py", "desc": "提取 sk_tr_ API Key"}
+  ],
+  "output": {
+    "format": "phone|api_key",
+    "path_hint": "data/keys/tokenrhythm_register/"
+  },
+  "account_columns": [
+    {"key": "email", "label": "手机号"},
+    {"key": "apikey", "label": "API Key", "preview": 24},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ]
+}

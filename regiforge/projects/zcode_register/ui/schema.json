@@ -1,0 +1,119 @@
+{
+  "version": 1,
+  "project_id": "zcode_register",
+  "summary": "注册 Z.ai / ZCode：OAuth 页直注册（用户名+邮箱+密码）→ 阿里云滑块（yydsocr + 非线性映射，与基元同款）→ 邮箱验证链接 → 设置密码完成注册；产出 accessToken",
+  "required_captcha_types": ["slider"],
+  "allowed_email_ids": [],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "browser 流程固定使用有头浏览器（阿里云滑块需真实交互）"
+  },
+  "fields": [
+    {
+      "key": "mail_timeout",
+      "label": "验证邮件等待（秒）",
+      "type": "number",
+      "config_path": "projects.zcode_register.mail_timeout",
+      "default": 180,
+      "min": 30,
+      "max": 600,
+      "help": "创建账号后等待验证邮件链接的最长时间"
+    },
+    {
+      "key": "captcha_timeout",
+      "label": "滑块超时（秒）",
+      "type": "number",
+      "config_path": "projects.zcode_register.captcha_timeout",
+      "default": 90,
+      "min": 15,
+      "max": 300,
+      "help": "单次阿里云滑块识别+拖动的总超时（provider 内部会自动重试）"
+    },
+    {
+      "key": "browser_backend",
+      "label": "浏览器底座",
+      "type": "select",
+      "config_path": "projects.zcode_register.browser_backend",
+      "default": "",
+      "options": [
+        { "value": "", "label": "跟随全局 browser.backend（默认 playwright）" },
+        { "value": "playwright", "label": "playwright — 原版 Playwright" },
+        { "value": "patchright", "label": "patchright — CDP 修补（免费，pip install patchright）" }
+      ],
+      "help": "browser 流程生效。patchright 需 pip install patchright。"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step01",
+      "title": "打开 OAuth 注册页",
+      "file": "steps/step01_open_oauth.py",
+      "desc": "打开 chat.z.ai OAuth 授权链接并切入注册表单"
+    },
+    {
+      "id": "step02",
+      "title": "填写注册表单",
+      "file": "steps/step02_fill_register.py",
+      "desc": "随机用户名 + 邮箱 + 密码"
+    },
+    {
+      "id": "step03",
+      "title": "创建账号 + 滑块",
+      "file": "steps/step03_submit_captcha.py",
+      "desc": "点创建账号触发阿里云滑块，slider.aliyun 识别+非线性换算拖动；通过后再次提交"
+    },
+    {
+      "id": "step04",
+      "title": "邮箱验证链接",
+      "file": "steps/step04_verify_email.py",
+      "desc": "MailNest 轮询收验证邮件，提取 verify 链接并打开"
+    },
+    {
+      "id": "step05",
+      "title": "设置密码完成注册",
+      "file": "steps/step05_finalize_register.py",
+      "desc": "验证后表单填密码+确认密码，点完成注册"
+    },
+    {
+      "id": "step06",
+      "title": "提取 accessToken",
+      "file": "steps/step06_extract_token.py",
+      "desc": "登录主界面后从 localStorage 提取 token"
+    }
+  ],
+  "output": {
+    "title": "最近产出 ZCode accessToken",
+    "line_format": "email|accessToken",
+    "preview_limit": 50,
+    "empty_hint": "跑通后写入 data/keys/zcode_register/api_keys.txt；可在控制台「导出 / 导入账号池」导出"
+  },
+  "export_json": {
+    "label": "导出 ZCode JSON",
+    "schema": "zcode-switcher-account/v1",
+    "filename_prefix": "zcode_profiles",
+    "help": "导出为 ZCode Switcher 可导入的 JSON（schema=zcode-switcher-account/v1），单账号。"
+  },
+  "account_columns": [
+    {"key": "email", "label": "Email"},
+    {"key": "apikey", "label": "accessToken", "type": "secret", "preview": 24},
+    {"key": "extra.user_id", "label": "UserID", "preview": 16},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ],
+  "help_file": "help.md",
+  "notes": [
+    "邮箱固定 mailsys/mailnest（project_code=z-ai001）；不在项目内复制取件实现",
+    "滑块固定 captcha/slider/aliyun（yydsocr 识别 + drag_distance 非线性映射，与 tokenrhythm 同款）；不在项目内复制打码实现",
+    "OAuth client_id / redirect_uri 来自 zcode 官方登录入口，勿改",
+    "建议 total=1、concurrency=1 先调试",
+    "踩坑：concurrency>2 会触发 Z.ai 服务端限流（验证服务不可用 / 创建账号挂起），批量建议 concurrency≤2",
+    "凭证 = z.ai 登录后的 accessToken（localStorage token）"
+  ]
+}

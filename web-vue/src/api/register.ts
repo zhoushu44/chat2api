@@ -78,6 +78,8 @@ export type LegacyRegisterConfig = {
   check_interval: number
   auto_refill?: boolean
   auto_refill_interval?: number
+  max_fail_enabled?: boolean
+  max_fail_rounds?: number
   enabled: boolean
   stats?: {
     success?: number

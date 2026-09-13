@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "project_id": "sensenova_register",
+  "summary": "注册商汤 SenseNova：OAuth2 PKCE HTTP 流程 + 可选短信 Provider 接码，产出 API Key",
+  "required_captcha_types": ["slider"],
+  "allowed_captcha_ids": ["slider.sensenova"],
+  "allowed_email_ids": [],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "allowed_sms_ids": ["jichisms", "haozhuma"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "HTTP 协议流程不启动注册浏览器"
+  },
+  "fields": [
+    {
+      "key": "sms_timeout",
+      "label": "短信验证码超时（秒）",
+      "type": "number",
+      "config_path": "projects.sensenova_register.sms_timeout",
+      "default": 120,
+      "min": 30,
+      "max": 600
+    },
+    {
+      "key": "retry_count",
+      "label": "短信超时重试次数",
+      "type": "number",
+      "config_path": "projects.sensenova_register.retry_count",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "help": "短信取码超时后释放号码并从 OAuth challenge 重新注册。"
+    },
+    {
+      "key": "region_code",
+      "label": "手机区号",
+      "type": "text",
+      "config_path": "projects.sensenova_register.region_code",
+      "default": "86",
+      "help": "中国大陆手机号填写 86。"
+    },
+    {
+      "key": "user_agent",
+      "label": "User-Agent（可选）",
+      "type": "text",
+      "config_path": "projects.sensenova_register.user_agent",
+      "default": "",
+      "help": "留空使用内置 Chrome User-Agent。"
+    }
+  ],
+  "steps": [
+    {"id": "step01_oauth_challenge", "title": "初始化 OAuth2 PKCE", "file": "steps/step01_oauth_challenge.py", "desc": "生成 PKCE 并获取 login_challenge"},
+    {"id": "step02_acquire_phone", "title": "获取手机号", "file": "steps/step02_acquire_phone.py", "desc": "通过所选 ctx.sms Provider 获取手机号"},
+    {"id": "step03_send_sms", "title": "发送短信", "file": "steps/step03_send_sms.py", "desc": "调用 SenseNova IAM 发送验证码，按需调用滑块 Provider"},
+    {"id": "step04_wait_sms", "title": "等待验证码", "file": "steps/step04_wait_sms.py", "desc": "通过 ctx.sms 轮询短信验证码"},
+    {"id": "step05_verify_sms", "title": "校验验证码", "file": "steps/step05_verify_sms.py", "desc": "提交短信验证码完成身份校验"},
+    {"id": "step06_register", "title": "创建账号", "file": "steps/step06_register.py", "desc": "生成用户名和密码并注册"},
+    {"id": "step07_exchange_token", "title": "交换 Token", "file": "steps/step07_exchange_token.py", "desc": "释放号码并用授权码交换 Token"},
+    {"id": "step08_fetch_apikey", "title": "获取 API Key", "file": "steps/step08_fetch_apikey.py", "desc": "读取或创建 SenseNova API Key"}
+  ],
+  "output": {
+    "format": "phone|api_key",
+    "path_hint": "data/keys/sensenova_register/"
+  },
+  "account_columns": [
+    {"key": "email", "label": "手机号"},
+    {"key": "apikey", "label": "API Key", "preview": 24},
+    {"key": "extra.username", "label": "用户名"},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ]
+}

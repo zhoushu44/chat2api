@@ -1,0 +1,676 @@
+{
+  "version": 1,
+  "description": "共用 Provider 配置表单规划。页面按当前选中的 captcha/email/proxy/exporter 过滤显示。",
+  "groups": [
+    {
+      "when": { "captcha_id": "hcaptcha.captcharun" },
+      "title": "CaptchaRun (hCaptcha)",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "CaptchaRun API Key",
+          "type": "password",
+          "config_path": "captcha.hcaptcha.captcharun.api_key",
+          "placeholder": "CAPTCHARUN_KEY"
+        },
+        {
+          "key": "api_url",
+          "label": "CaptchaRun API URL",
+          "type": "text",
+          "config_path": "captcha.hcaptcha.captcharun.api_url",
+          "default": "https://api.captcha-run.com/v2/tasks",
+          "placeholder": "https://api.captcha-run.com/v2/tasks"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "cloudflare.captcharun" },
+      "title": "CaptchaRun (CloudFlare5s)",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "CaptchaRun API Key",
+          "type": "password",
+          "config_path": "captcha.cloudflare.captcharun.api_key",
+          "placeholder": "CAPTCHARUN_KEY"
+        },
+        {
+          "key": "api_url",
+          "label": "CaptchaRun API URL",
+          "type": "text",
+          "config_path": "captcha.cloudflare.captcharun.api_url",
+          "default": "https://api.captcha-run.com/v2/tasks",
+          "placeholder": "https://api.captcha-run.com/v2/tasks"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "cloudflare.flaresolverr" },
+      "title": "FlareSolverr (远程服务)",
+      "fields": [
+        {
+          "key": "api_url",
+          "label": "FlareSolverr API 地址",
+          "type": "text",
+          "config_path": "captcha.cloudflare.flaresolverr.api_url",
+          "default": "http://192.6.121.16:8191/v1",
+          "placeholder": "http://服务器IP:8191/v1",
+          "help": "FlareSolverr 服务的 HTTP API 地址。格式：http://IP:8191/v1"
+        },
+        {
+          "key": "proxy_url",
+          "label": "代理地址（可选）",
+          "type": "text",
+          "config_path": "captcha.cloudflare.flaresolverr.proxy.url",
+          "placeholder": "socks5://mihomo:7890",
+          "help": "FlareSolverr 访问目标网站时使用的代理。可配合 mihomo 使用，格式：socks5://IP:端口 或 http://IP:端口"
+        },
+        {
+          "key": "proxy_username",
+          "label": "代理用户名（可选）",
+          "type": "text",
+          "config_path": "captcha.cloudflare.flaresolverr.proxy.username",
+          "placeholder": "代理认证用户名",
+          "help": "如果代理需要认证，填写用户名"
+        },
+        {
+          "key": "proxy_password",
+          "label": "代理密码（可选）",
+          "type": "password",
+          "config_path": "captcha.cloudflare.flaresolverr.proxy.password",
+          "placeholder": "代理认证密码",
+          "help": "如果代理需要认证，填写密码"
+        },
+        {
+          "key": "max_timeout",
+          "label": "最大超时（毫秒）",
+          "type": "number",
+          "config_path": "captcha.cloudflare.flaresolverr.max_timeout",
+          "default": 60000,
+          "placeholder": "60000",
+          "help": "FlareSolverr 解决挑战的最大等待时间，默认 60000ms（60 秒）"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "turnstile.captcharun" },
+      "title": "CaptchaRun (Turnstile)",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "CaptchaRun API Key",
+          "type": "password",
+          "config_path": "captcha.turnstile.captcharun.api_key",
+          "placeholder": "CAPTCHARUN_KEY"
+        },
+        {
+          "key": "api_url",
+          "label": "CaptchaRun API URL",
+          "type": "text",
+          "config_path": "captcha.turnstile.captcharun.api_url",
+          "default": "https://api.captcha-run.com/v2/tasks",
+          "placeholder": "https://api.captcha-run.com/v2/tasks"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "turnstile.yescaptcha" },
+      "title": "YesCaptcha (Turnstile ProxyLess)",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "YesCaptcha API Key",
+          "type": "password",
+          "config_path": "captcha.turnstile.yescaptcha.api_key",
+          "placeholder": "YESCAPTCHA_KEY 或 YESCAPTCHA_API_KEY",
+          "help": "在 yescaptcha.com 注册后获取。支持 TurnstileTaskProxyless 和 M1 premium。优先读取环境变量。"
+        },
+        {
+          "key": "api_url",
+          "label": "API 地址",
+          "type": "text",
+          "config_path": "captcha.turnstile.yescaptcha.api_url",
+          "default": "https://api.yescaptcha.com",
+          "placeholder": "YESCAPTCHA_API_URL 或 https://api.yescaptcha.com",
+          "help": "国内用户可填 https://cn.yescaptcha.com。优先读取环境变量。"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "turnstile.capsolver" },
+      "title": "CapSolver (Turnstile ProxyLess)",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "CapSolver API Key",
+          "type": "password",
+          "config_path": "captcha.turnstile.capsolver.api_key",
+          "placeholder": "CAP-XXXXXXXXXXXXXXXX",
+          "help": "在 capsolver.com 注册后获取，以 CAP- 开头。AntiTurnstileTaskProxyLess 无需代理。"
+        },
+        {
+          "key": "api_url",
+          "label": "CapSolver API URL",
+          "type": "text",
+          "config_path": "captcha.turnstile.capsolver.api_url",
+          "default": "https://api.capsolver.com",
+          "placeholder": "https://api.capsolver.com"
+        }
+      ]
+    },
+    {
+      "when": { "captcha_id": "slider.aliyun" },
+      "title": "阿里云滑块（yydsocr + OpenCV）",
+      "fields": [
+        {
+          "key": "secret_key",
+          "label": "yydsocr Secret Key",
+          "type": "password",
+          "config_path": "captcha.slider.aliyun.secret_key",
+          "placeholder": "在 yydsocr 控制台获取"
+        },
+        {
+          "key": "api_url",
+          "label": "yydsocr API URL",
+          "type": "text",
+          "config_path": "captcha.slider.aliyun.api_url",
+          "placeholder": "http://api.yydsocr.com/verify_api"
+        },
+        {
+          "key": "type_id",
+          "label": "yydsocr Type ID",
+          "type": "text",
+          "config_path": "captcha.slider.aliyun.type_id",
+          "default": "20040",
+          "placeholder": "20040"
+        },
+        {
+          "key": "max_retries",
+          "label": "滑块最大重试次数",
+          "type": "number",
+          "config_path": "captcha.slider.aliyun.max_retries",
+          "default": 3,
+          "min": 1,
+          "max": 10
+        }
+      ]
+    },
+    {
+      "when": { "email_id": "tempmail" },
+      "title": "TempMail.lol 临时邮箱（所有项目共用）",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "TempMail.lol API Key",
+          "type": "password",
+          "config_path": "email.tempmail.api_key",
+          "placeholder": "TEMPMAIL_API_KEY",
+          "help": "在 tempmail.lol 注册 Plus/Ultra 后获取。"
+        },
+        {
+          "key": "proxy",
+          "label": "代理（可选，多行轮换）",
+          "type": "textarea",
+          "config_path": "email.tempmail.proxy",
+          "rows": 3,
+          "placeholder": "socks5://user:pass@host:port",
+          "help": "tempmail.lol 从中国大陆直连会 403（geo 限制），建议填可用代理；每行一个自动轮换。"
+        }
+      ]
+    },
+    {
+      "when": { "email_id": "cloudflare_worker" },
+      "title": "Cloudflare Worker 邮箱（所有项目共用）",
+      "fields": [
+        {
+          "key": "cloudmail_api_base",
+          "label": "Cloud Mail API Base",
+          "type": "text",
+          "config_path": "email.cloudflare_worker.cloudmail_api_base",
+          "placeholder": "https://grok-mail-inbox.example.workers.dev"
+        },
+        {
+          "key": "cloudmail_api_key",
+          "label": "Cloud Mail API Key",
+          "type": "password",
+          "config_path": "email.cloudflare_worker.cloudmail_api_key"
+        },
+        {
+          "key": "cloudmail_domains",
+          "label": "Cloud Mail 域名",
+          "type": "text",
+          "config_path": "email.cloudflare_worker.cloudmail_domains",
+          "placeholder": "example.com"
+        },
+        {
+          "key": "cloudmail_path_messages",
+          "label": "收件接口路径",
+          "type": "text",
+          "config_path": "email.cloudflare_worker.cloudmail_path_messages",
+          "default": "/api/public/emailList",
+          "placeholder": "/api/public/emailList"
+        }
+      ]
+    },
+    {
+      "when": { "email_id": "xunmail" },
+      "title": "寻邮 Outlook（所有项目共用）",
+      "fields": [
+        {
+          "key": "api_address",
+          "label": "寻邮 API 地址",
+          "type": "text",
+          "config_path": "email.xunmail.api_address",
+          "default": "https://www.xunmail.cn/api-doc",
+          "placeholder": "https://www.xunmail.cn/api-doc",
+          "help": "可填文档页、服务根地址或完整取件地址；会归一化为 Graph/OAuth2 端点。"
+        },
+        {
+          "key": "accounts",
+          "label": "Outlook 四段式账号池",
+          "type": "textarea",
+          "config_path": "email.xunmail.accounts",
+          "rows": 6,
+          "placeholder": "email@outlook.com----password----client_id----refresh_token",
+          "help": "每行一条：email----password----client_id----refresh_token。密码段仅兼容格式，不会发送。"
+        }
+      ]
+    },
+    {
+      "when": { "email_id": "mailnest" },
+      "title": "MailNest 临时邮箱（所有项目共用）",
+      "fields": [
+        {
+          "key": "api_key",
+          "label": "MailNest API Key",
+          "type": "password",
+          "config_path": "email.mailnest.api_key",
+          "placeholder": "sk_..."
+        },
+        {
+          "key": "base_url",
+          "label": "API 地址",
+          "type": "text",
+          "config_path": "email.mailnest.base_url",
+          "default": "https://mailnest.top",
+          "placeholder": "https://mailnest.top"
+        },
+        {
+          "key": "project_code",
+          "label": "默认项目编码（兜底）",
+          "type": "text",
+          "config_path": "email.mailnest.project_code",
+          "default": "chatgpt001",
+          "placeholder": "chatgpt001"
+        },
+        {
+          "key": "poll_interval",
+          "label": "收件轮询间隔（秒）",
+          "type": "number",
+          "config_path": "email.mailnest.poll_interval",
+          "default": 3,
+          "placeholder": "3"
+        },
+        {
+          "key": "auto_release",
+          "label": "超时自动释放",
+          "type": "checkbox",
+          "config_path": "email.mailnest.auto_release",
+          "default": true,
+          "help": "取码超时后自动 release，未成功收件可退回冻结金额。"
+        }
+      ]
+    },
+    {
+      "when": { "sms_id": "haozhuma" },
+      "title": "豪猪短信（所有短信项目共用）",
+      "fields": [
+        {
+          "key": "account",
+          "label": "API 账号",
+          "type": "text",
+          "config_path": "sms.haozhuma.account",
+          "placeholder": "豪猪 API 账号"
+        },
+        {
+          "key": "password",
+          "label": "API 密码",
+          "type": "password",
+          "config_path": "sms.haozhuma.password",
+          "placeholder": "豪猪 API 密码"
+        },
+        {
+          "key": "base_url",
+          "label": "服务器地址",
+          "type": "text",
+          "config_path": "sms.haozhuma.base_url",
+          "default": "https://api.haozhuma.com",
+          "placeholder": "https://api.haozhuma.com"
+        },
+        {
+          "key": "sid",
+          "label": "短信项目 SID",
+          "type": "text",
+          "config_path": "sms.haozhuma.sid",
+          "placeholder": "豪猪平台项目 ID"
+        },
+        {
+          "key": "isp",
+          "label": "运营商（可选）",
+          "type": "text",
+          "config_path": "sms.haozhuma.isp",
+          "placeholder": "例如 1"
+        },
+        {
+          "key": "province",
+          "label": "省份代码（可选）",
+          "type": "text",
+          "config_path": "sms.haozhuma.Province",
+          "placeholder": "例如 44"
+        },
+        {
+          "key": "ascription",
+          "label": "号码类型（可选）",
+          "type": "text",
+          "config_path": "sms.haozhuma.ascription",
+          "placeholder": "按豪猪文档填写"
+        },
+        {
+          "key": "paragraph",
+          "label": "号段筛选（可选）",
+          "type": "text",
+          "config_path": "sms.haozhuma.paragraph",
+          "placeholder": "例如 1380|1580"
+        }
+      ]
+    },
+    {
+      "when": { "sms_id": "jichisms" },
+      "title": "疾驰短信（所有短信项目共用）",
+      "fields": [
+        {
+          "key": "token",
+          "label": "疾驰短信 fcToken",
+          "type": "password",
+          "config_path": "sms.jichisms.token",
+          "placeholder": "平台「我的Token」页面获取"
+        },
+        {
+          "key": "sid",
+          "label": "短信项目 SID",
+          "type": "text",
+          "config_path": "sms.jichisms.sid",
+          "placeholder": "疾驰短信项目列表中的项目 ID"
+        },
+        {
+          "key": "ascription",
+          "label": "卡号类型",
+          "type": "select",
+          "config_path": "sms.jichisms.ascription",
+          "default": "1",
+          "options": [
+            {"value": "1", "label": "移动"},
+            {"value": "2", "label": "联通"}
+          ]
+        },
+        {
+          "key": "paragraph",
+          "label": "号段筛选（可选）",
+          "type": "text",
+          "config_path": "sms.jichisms.paragraph",
+          "placeholder": "例如 138"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "socks5" },
+      "title": "SOCKS5 代理",
+      "fields": [
+        {
+          "key": "server",
+          "label": "SOCKS5 链接（支持多行，自动轮换）",
+          "type": "textarea",
+          "config_path": "proxy.socks5.server",
+          "placeholder": "socks5://user:pass@host1:port1\nsocks5://user:pass@host2:port2",
+          "help": "填写 socks5:// 或 socks5h:// 地址，每行一个。系统会自动轮换使用，失败时标记并切换到下一个。留空时使用 API 模式或直连。"
+        },
+        {
+          "key": "api_url",
+          "label": "代理 API 地址",
+          "type": "text",
+          "config_path": "proxy.socks5.api_url",
+          "placeholder": "http://192.6.121.16:4433/api/proxies?num=1&type=txt&format=n&sid=chatgpt-{sid}&time=20",
+          "help": "填写 API 地址后从 API 动态获取代理链接，自动提取 socks5:// 或 socks5h://。支持粘性占位符 {sid}：每次自动生成唯一会话 ID，每账号固定独立出口（WARP 代理池示例见 placeholder，type=json 时需配 json_path）；不写 {sid} 则按 API 默认轮换。"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "http_proxy" },
+      "title": "HTTP/HTTPS 代理",
+      "fields": [
+        {
+          "key": "server",
+          "label": "HTTP/HTTPS 链接（支持多行，自动轮换）",
+          "type": "textarea",
+          "config_path": "proxy.http_proxy.server",
+          "placeholder": "http://user:pass@host1:port1\nhttp://user:pass@host2:port2",
+          "help": "填写 http:// 或 https:// 地址，每行一个。系统会自动轮换使用，失败时标记并切换到下一个。适合 ChatGPT HTTP 注册模式（curl_cffi）。"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "relay_scout" },
+      "title": "Relay Scout 代理池（API）",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "Relay Scout 地址",
+          "type": "text",
+          "config_path": "proxy.relay_scout.base_url",
+          "default": "http://192.6.121.16:8445",
+          "placeholder": "http://192.6.121.16:8445"
+        },
+        {
+          "key": "api_key",
+          "label": "Relay Scout API Key",
+          "type": "password",
+          "config_path": "proxy.relay_scout.api_key",
+          "placeholder": "Relay Scout API Key"
+        },
+        {
+          "key": "project",
+          "label": "项目 ID",
+          "type": "text",
+          "config_path": "proxy.relay_scout.project",
+          "default": "default",
+          "placeholder": "default"
+        },
+        {
+          "key": "session",
+          "label": "粘性会话（可选）",
+          "type": "text",
+          "config_path": "proxy.relay_scout.session",
+          "placeholder": "注册邮箱或账号"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "wary" },
+      "title": "Wary 粘性代理池",
+      "fields": [
+        {
+          "key": "api_url",
+          "label": "Wary 代理 API 地址",
+          "type": "text",
+          "config_path": "proxy.wary.api_url",
+          "placeholder": "http://192.6.121.16:4433/api/proxies?num=1&type=txt&format=n&sid=chatgpt-{sid}&time=20",
+          "help": "固定粘性 WARP 代理池 API。URL 含 {sid} 占位符时，每账号生成唯一会话 ID 固定独立出口；不写 {sid} 则按 API 默认轮换。"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "clash" },
+      "title": "Clash 代理（API 动态节点）",
+      "fields": [
+        {
+          "key": "clash_api_url",
+          "label": "Clash API 地址",
+          "type": "text",
+          "config_path": "proxy.clash.clash_api_url",
+          "placeholder": "http://127.0.0.1:9090",
+          "help": "Clash 外部控制器地址。需在 Clash 配置中启用 external-controller。"
+        },
+        {
+          "key": "clash_api_secret",
+          "label": "Clash API 密钥",
+          "type": "password",
+          "config_path": "proxy.clash.clash_api_secret",
+          "placeholder": "在 Clash 配置中设置的 secret",
+          "help": "在 Clash 配置的 secret 字段设置。"
+        },
+        {
+          "key": "clash_group_name",
+          "label": "代理组名称（可选）",
+          "type": "text",
+          "config_path": "proxy.clash.clash_group_name",
+          "placeholder": "留空则使用第一个代理组",
+          "help": "指定要使用的代理组名称，不填则自动使用第一个。"
+        },
+        {
+          "key": "clash_local_port",
+          "label": "本地 SOCKS5 端口",
+          "type": "number",
+          "config_path": "proxy.clash.clash_local_port",
+          "default": 7897,
+          "placeholder": "7897",
+          "help": "Clash 的 socks-port 配置，默认 7897。"
+        }
+      ]
+    },
+    {
+      "when": { "proxy_id": "mihomo" },
+      "title": "mihomo（WebUI API 动态入口）",
+      "fields": [
+        {
+          "key": "api_base",
+          "label": "mihomo API 根地址",
+          "type": "text",
+          "config_path": "proxy.mihomo.api_base",
+          "default": "http://192.6.121.16:7892",
+          "placeholder": "http://192.6.121.16:7892",
+          "help": "Mihomo-Relay-WebUI 服务器 7892 端口的 API 根地址。"
+        },
+        {
+          "key": "api_key",
+          "label": "mihomo API Key",
+          "type": "password",
+          "config_path": "proxy.mihomo.api_key",
+          "placeholder": "WebUI 的 API Key",
+          "help": "在 mihomo WebUI「对外连接」卡片设置，调用 /api/* 接口需携带。"
+        },
+        {
+          "key": "protocol",
+          "label": "返回出口协议",
+          "type": "select",
+          "config_path": "proxy.mihomo.protocol",
+          "default": "socks5",
+          "options": [
+            {"value": "socks5", "label": "SOCKS5 (7890)"},
+            {"value": "http", "label": "HTTP (7891)"}
+          ],
+          "help": "选用服务器对外连接入口：SOCKS5 7890 或 HTTP 7891。"
+        },
+        {
+          "key": "rotate",
+          "label": "每次获取前轮换出口",
+          "type": "checkbox",
+          "config_path": "proxy.mihomo.rotate",
+          "default": false,
+          "help": "勾选后每次 acquire 先 POST /api/rotate 刷新出口 IP。模式 E 通常由服务端自动提取，无需开启。"
+        }
+      ]
+    },
+    {
+      "when": { "exporter_id": "file" },
+      "title": "导出到文件夹",
+      "fields": [
+        {
+          "key": "output_dir",
+          "label": "导出文件夹路径",
+          "type": "folder",
+          "config_path": "export.file.output_dir"
+        },
+        {
+          "key": "filename",
+          "label": "文件名",
+          "type": "text",
+          "config_path": "export.file.filename",
+          "default": "accounts.txt",
+          "placeholder": "accounts.txt"
+        }
+      ]
+    },
+    {
+      "when": { "exporter_id": "sub2api" },
+      "title": "导入 Sub2API",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "Sub2API 根地址",
+          "type": "text",
+          "config_path": "export.sub2api.base_url",
+          "placeholder": "https://your-sub2api.example.com",
+          "help": "不要带尾斜杠。接口：POST /api/v1/admin/accounts/batch"
+        },
+        {
+          "key": "admin_access_token",
+          "label": "管理员访问令牌",
+          "type": "password",
+          "config_path": "export.sub2api.admin_access_token",
+          "placeholder": "Bearer token（只填 token 本体）"
+        }
+      ]
+    },
+    {
+      "when": { "exporter_id": "grok2api" },
+      "title": "导入 Grok2API",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "Grok2API 根地址",
+          "type": "text",
+          "config_path": "export.grok2api.base_url",
+          "placeholder": "https://your-grok2api.example.com"
+        },
+        {
+          "key": "admin_password",
+          "label": "管理员 JWT",
+          "type": "password",
+          "config_path": "export.grok2api.admin_password",
+          "help": "填写目标 Grok2API 后台 /api/admin/v1 请求使用的 Bearer JWT。"
+        }
+      ]
+    },
+    {
+      "when": { "exporter_id": "chatgpt2api" },
+      "title": "导入 chatgpt2api",
+      "fields": [
+        {
+          "key": "base_url",
+          "label": "chatgpt2api 根地址",
+          "type": "text",
+          "config_path": "export.chatgpt2api.base_url",
+          "placeholder": "https://your-chatgpt2api.example.com"
+        },
+        {
+          "key": "admin_password",
+          "label": "管理员密钥",
+          "type": "password",
+          "config_path": "export.chatgpt2api.admin_password",
+          "placeholder": "只填管理密钥本体",
+          "help": "chatgpt2api 管理员密钥（require_admin 校验）；系统会以 Authorization: Bearer <密钥> 调用 /api/accounts。"
+        }
+      ]
+    }
+  ]
+}

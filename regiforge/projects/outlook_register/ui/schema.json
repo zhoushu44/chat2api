@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "project_id": "outlook_register",
+  "summary": "注册 Outlook / Hotmail 账号：有头浏览器模拟真人填表（邮箱别名+密码+生日+姓名）→ Microsoft 按压验证码 → 绑定辅助邮箱收安全代码；产出 账号:密码",
+  "required_captcha_types": ["funcaptcha"],
+  "allowed_captcha_ids": ["funcaptcha.browser_press"],
+  "allowed_email_ids": ["tempmail", "xunmail", "cloudflare_worker", "mailnest"],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "browser 流程固定有头浏览器（Microsoft 风控 + 按压验证码需要真实浏览器）"
+  },
+  "fields": [
+    {
+      "key": "email_suffix",
+      "label": "邮箱后缀",
+      "type": "select",
+      "config_path": "projects.outlook_register.email_suffix",
+      "default": "@outlook.com",
+      "options": [
+        { "value": "@outlook.com", "label": "@outlook.com" },
+        { "value": "@hotmail.com", "label": "@hotmail.com" }
+      ]
+    },
+    {
+      "key": "bot_protection_wait",
+      "label": "真人操作时长基准（秒）",
+      "type": "number",
+      "config_path": "projects.outlook_register.bot_protection_wait",
+      "default": 16,
+      "min": 5,
+      "max": 120,
+      "help": "模拟真人填表节奏：输入间隔、表单停留总时长都以此为准，越大越稳但越慢。"
+    },
+    {
+      "key": "mail_timeout",
+      "label": "安全代码等待（秒）",
+      "type": "number",
+      "config_path": "projects.outlook_register.mail_timeout",
+      "default": 180,
+      "min": 30,
+      "max": 600,
+      "help": "提交辅助邮箱后等待 Microsoft 安全代码邮件的最长时间。"
+    },
+    {
+      "key": "max_captcha_retries",
+      "label": "按压验证码最大重试",
+      "type": "number",
+      "config_path": "projects.outlook_register.max_captcha_retries",
+      "default": 3,
+      "min": 1,
+      "max": 10,
+      "help": "按压挑战允许完成的最大轮数。持续出现 Keep going 通常是当前代理/IP 风险评分过高，增加轮数不能稳定解决。"
+    },
+    {
+      "key": "browser_backend",
+      "label": "浏览器底座",
+      "type": "select",
+      "config_path": "projects.outlook_register.browser_backend",
+      "default": "patchright",
+      "options": [
+        { "value": "patchright", "label": "patchright — CDP 修补（推荐，需 pip install patchright）" },
+        { "value": "playwright", "label": "playwright — 原版 Playwright" },
+        { "value": "", "label": "跟随全局 browser.backend" }
+      ],
+      "help": "Microsoft 反自动化较严，推荐 patchright。"
+    },
+    {
+      "key": "oauth_client_id",
+      "label": "OAuth Client ID",
+      "type": "text",
+      "config_path": "projects.outlook_register.oauth_client_id",
+      "default": "92b28d88-798a-45a8-87f5-30c9037c981c",
+      "placeholder": "Azure 应用注册 → 应用程序(客户端) ID",
+      "help": "Azure 应用注册拿到的 GUID。默认使用项目指定的公共客户端 ID。"
+    },
+    {
+      "key": "oauth_redirect_uri",
+      "label": "OAuth 重定向 URI",
+      "type": "text",
+      "config_path": "projects.outlook_register.oauth_redirect_uri",
+      "default": "https://localhost",
+      "placeholder": "https://localhost",
+      "help": "Azure 身份验证里配置的回调地址，必须与注册时填的完全一致。"
+    },
+    {
+      "key": "oauth_tenant",
+      "label": "OAuth 租户",
+      "type": "text",
+      "config_path": "projects.outlook_register.oauth_tenant",
+      "default": "consumers",
+      "placeholder": "consumers",
+      "help": "个人 outlook.com 必须用 consumers；common 也行但部分 AADSTS 报错。"
+    },
+    {
+      "key": "oauth_scope",
+      "label": "OAuth Scope",
+      "type": "text",
+      "config_path": "projects.outlook_register.oauth_scope",
+      "default": "offline_access https://graph.microsoft.com/Mail.Read",
+      "placeholder": "offline_access https://graph.microsoft.com/Mail.Read",
+      "help": "授权 scope。Graph 主链路用 graph.microsoft.com/Mail.Read；IMAP 备选用 outlook.office.com/IMAP.AccessAsUser.All。必须含 offline_access 才能拿 refresh_token。"
+    },
+    {
+      "key": "enable_oauth_token",
+      "label": "启用 step06 OAuth 拿 refresh_token",
+      "type": "checkbox",
+      "config_path": "projects.outlook_register.enable_oauth_token",
+      "default": true,
+      "help": "注册成功后自动跑 Public Client OAuth 拿 refresh_token，写入 AccountResult.extra.refresh_token。outlookEmailPlus 导入必需。"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step01_open_create",
+      "title": "打开创建账号页",
+      "file": "steps/step01_open_create.py",
+      "desc": "打开 outlook.live.com 创建账号入口并接受「同意并继续」"
+    },
+    {
+      "id": "step02_fill_account",
+      "title": "填写邮箱与密码",
+      "file": "steps/step02_fill_account.py",
+      "desc": "随机邮箱别名 + 强密码；@hotmail.com 时切换域名；按需填生日"
+    },
+    {
+      "id": "step03_fill_profile",
+      "title": "填写姓名资料",
+      "file": "steps/step03_fill_profile.py",
+      "desc": "姓/名输入 + 保证总操作时长达标后提交"
+    },
+    {
+      "id": "step04_solve_captcha",
+      "title": "通过按压验证码",
+      "file": "steps/step04_solve_captcha.py",
+      "desc": "funcaptcha.browser_press 在浏览器内按压「验证质询」挑战"
+    },
+    {
+      "id": "step05_bind_recovery",
+      "title": "绑定辅助邮箱",
+      "file": "steps/step05_bind_recovery.py",
+      "desc": "email.tempmail 创建临时邮箱 → 填入辅助邮箱 → 回填 Microsoft 安全代码"
+    },
+    {
+      "id": "step06_oauth_token",
+      "title": "OAuth 拿 refresh_token",
+      "file": "steps/step06_oauth_token.py",
+      "desc": "跳到 Microsoft /authorize → 同意 consent → 拦截 redirect_uri 捕获 code → POST /token 兑换 refresh_token + access_token → 写入 AccountResult.extra",
+      "optional": true,
+      "skip_when": "projects.outlook_register.enable_oauth_token=false 或 oauth_client_id 未配置"
+    }
+  ],
+  "output": {
+    "title": "最近产出 Outlook 账号",
+    "line_format": "email|password",
+    "copy_format": "{{email}}----{{apikey}}----{{extra.client_id}}----{{extra.refresh_token}}",
+    "preview_limit": 50,
+    "empty_hint": "跑通后写入 data/keys/outlook_register/accounts.txt；可在控制台「导出 / 导入账号池」导出"
+  },
+  "account_columns": [
+    {"key": "email", "label": "Outlook 邮箱"},
+    {"key": "apikey", "label": "密码", "type": "secret", "preview": 12},
+    {"key": "extra.recovery_email", "label": "辅助邮箱", "preview": 20},
+    {"key": "extra.refresh_token", "label": "refresh_token", "type": "secret", "preview": 16},
+    {"key": "extra.client_id", "label": "client_id", "preview": 12},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ],
+  "help_file": "help.md",
+  "notes": [
+    "凭证 = email@outlook.com : password（apikey 槽位存密码），辅助邮箱记录在 extra.recovery_email",
+    "验证码固定 captcha/funcaptcha/browser_press（浏览器内按压，非 API 求解）；出现 iframe#enforcementFrame 图片 FunCaptcha 时无法自动通过",
+    "辅助邮箱推荐 mailsys/tempmail（email.tempmail），也可选 xunmail / cloudflare_worker / mailnest；tempmail.lol 从中国大陆直连会 403（geo 限制），需在 email.tempmail.proxy 配置可用代理",
+    "用 mailnest 收 Microsoft 安全代码时必须确保 email.mailnest.project_code（或 project_codes.outlook_register）指向 microsoft 系列 product_code（默认 microsoft001）；chatgpt001 等不通用的 code 会被过滤掉邮件，表现为一直 read timeout 直到 180s 释放",
+    "浏览器底座推荐 patchright（pip install patchright）；Microsoft 对自动化浏览器检测较严",
+    "代理质量与成功率强相关；同一 IP 短时间不宜多次注册（会触发「一些异常活动」风控）",
+    "OAuth（step06，可选）：启用后注册成功自动跑 Public Client OAuth 拿 refresh_token + access_token，写入 extra；outlookEmailPlus（5001）导入必需。默认 oauth_client_id 为 92b28d88-798a-45a8-87f5-30c9037c981c。",
+    "Azure 应用注册步骤：portal.azure.com → 应用注册 → 新建（任意目录 + 个人 Microsoft 账户）→ 身份验证开启公共客户端流 → API 权限加 offline_access + Mail.Read + User.Read；详见 help.md",
+    "建议 total=1、concurrency=1 先调试，跑通后再逐步提并发"
+  ]
+}

@@ -79,6 +79,9 @@ type Config struct {
 	Stats              Stats             `json:"stats"`
 	Logs               []LogEntry        `json:"logs"` // 仅内存展示，持久化时另存
 	AutoFollow         bool              `json:"auto_follow,omitempty"`
+	// 连续失败熔断：开关 + 连续失败轮次上限（达到后自动停止并关闭自动注册）
+	MaxFailEnabled bool `json:"max_fail_enabled"`
+	MaxFailRounds  int  `json:"max_fail_rounds"`
 }
 
 // Service 注册服务，包含简易状态机 + 任务参数持久化 + 自动注册巡检
@@ -90,6 +93,8 @@ type Service struct {
 	logs     []LogEntry
 	pollDone chan struct{}
 	starting bool
+	// 连续失败轮次计数（内存态，成功一轮即清零；不持久化）
+	consecutiveFail int
 	// Forge RegiForge 任务桥接客户端（R3 真实链路；测试可用 SetClient 注入 httptest 指向）
 	Forge *Client
 	// 可注入：账号池数量查询，默认读 accounts.json
@@ -122,6 +127,79 @@ func runtimeChannel() map[string]string {
 	}
 }
 
+// mailnestPatch 从本地邮箱 provider 配置中提取 mailnest 参数，
+// 用于推送给 RegiForge（使其 config.json 的 email.mailnest 与页面配置一致）。
+// 仅当 api_key 非空时才返回，避免用空值覆盖 RegiForge 已有配置。
+func mailnestPatch(providers []map[string]any) map[string]any {
+	for _, p := range providers {
+		if p == nil {
+			continue
+		}
+		if id, _ := p["id"].(string); id != "regiforge-mailnest" {
+			if t, _ := p["type"].(string); t != "mailnest" {
+				continue
+			}
+		}
+		if enable, ok := p["enable"].(bool); ok && !enable {
+			continue
+		}
+		apiKey, _ := p["api_key"].(string)
+		if strings.TrimSpace(apiKey) == "" {
+			continue // 空 key 不推送，避免覆盖 RegiForge 侧配置
+		}
+		baseURL, _ := p["api_base"].(string)
+		if strings.TrimSpace(baseURL) == "" {
+			baseURL = "https://mailnest.top"
+		}
+		patch := map[string]any{
+			"api_key":  apiKey,
+			"base_url": strings.TrimRight(strings.TrimSpace(baseURL), "/"),
+		}
+		if domain, _ := p["default_domain"].(string); strings.TrimSpace(domain) != "" {
+			patch["default_domain"] = domain
+		}
+		return map[string]any{"email": map[string]any{"mailnest": patch}}
+	}
+	return nil
+}
+
+// proxyPatch 根据代理环境变量构造 RegiForge 的 proxy 配置补丁。
+//
+// 背景：注册必须走非 CN 出口，否则 OpenAI 直接 403。RegiForge 的 config.json
+// 需要存在对应 proxy_id 的定义（如 wary），否则会静默退化成直连。
+// 这里从环境变量读取代理池地址，保证与部署环境一致；未配置则返回 nil（不动远端）。
+func proxyPatch() map[string]any {
+	apiURL := strings.TrimSpace(os.Getenv("REGIFORGE_PROXY_API_URL"))
+	if apiURL == "" {
+		return nil
+	}
+	wary := map[string]any{"api_url": apiURL}
+	if key := strings.TrimSpace(os.Getenv("REGIFORGE_PROXY_API_KEY")); key != "" {
+		wary["api_key"] = key
+	}
+	return map[string]any{"proxy": map[string]any{"wary": wary}}
+}
+
+// exportPatch 构造 RegiForge 的 export.chatgpt2api 配置补丁，
+// 让注册成功的账号自动导入 chat2api 账号池（POST {base_url}/api/accounts）。
+// 两者同处于单镜像容器内，通过 REGIFORGE_EXPORT_BASE_URL 指向本服务 3077 端口。
+// 未配置 admin_password 时返回 nil（不动远端，避免空密码覆盖）。
+func exportPatch() map[string]any {
+	baseURL := strings.TrimSpace(os.Getenv("REGIFORGE_EXPORT_BASE_URL"))
+	adminPW := strings.TrimSpace(os.Getenv("REGIFORGE_EXPORT_ADMIN_PASSWORD"))
+	if baseURL == "" || adminPW == "" {
+		return nil
+	}
+	return map[string]any{
+		"export": map[string]any{
+			"chatgpt2api": map[string]any{
+				"base_url":       strings.TrimRight(baseURL, "/"),
+				"admin_password": adminPW,
+			},
+		},
+	}
+}
+
 func envOr(k, d string) string {
 	if v := os.Getenv(k); v != "" {
 		return v
@@ -147,6 +225,8 @@ func defaults() Config {
 		CheckInterval:      5,
 		AutoRefill:         false,
 		AutoRefillInterval: 300,
+		MaxFailEnabled:     false,
+		MaxFailRounds:      10,
 		Enabled:            false,
 		Channel:            runtimeChannel(),
 		Stats: Stats{
@@ -199,6 +279,18 @@ func normalize(raw Config) Config {
 		interval = 3600
 	}
 	cfg.AutoRefillInterval = interval
+	cfg.MaxFailEnabled = raw.MaxFailEnabled
+	rounds := raw.MaxFailRounds
+	if rounds <= 0 {
+		rounds = 10
+	}
+	if rounds < 1 {
+		rounds = 1
+	}
+	if rounds > 1000 {
+		rounds = 1000
+	}
+	cfg.MaxFailRounds = rounds
 	cfg.Proxy = strings.TrimSpace(raw.Proxy)
 	cfg.Enabled = raw.Enabled
 	cfg.AutoFollow = raw.AutoFollow
@@ -393,7 +485,7 @@ func (s *Service) Update(updates map[string]any) Config {
 	for k, v := range updates {
 		// 仅允许白名单字段
 		switch k {
-		case "total", "threads", "mode", "target_quota", "target_available", "check_interval", "auto_refill", "auto_refill_interval", "proxy", "mail", "enabled", "channel", "auto_follow":
+		case "total", "threads", "mode", "target_quota", "target_available", "check_interval", "auto_refill", "auto_refill_interval", "proxy", "mail", "enabled", "channel", "auto_follow", "max_fail_enabled", "max_fail_rounds":
 			base[k] = v
 		}
 	}
@@ -469,6 +561,21 @@ func (s *Service) startTask(plan, threads int, mode string, target int) Config {
 		s.mu.Unlock()
 	}()
 	forge := s.currentForge()
+	// 创建任务前，先把页面/环境配置推送到 RegiForge，否则：
+	//   - 邮箱 api_key 为空 → 报“未配置 api_key”
+	//   - 代理 proxy_id 未定义 → 静默直连，CN 出口被 OpenAI 403
+	//   - export.chatgpt2api 未配置 → 注册成功账号无法自动入库
+	s.mu.RLock()
+	patches := []map[string]any{mailnestPatch(s.cfg.Mail.Providers), proxyPatch(), exportPatch()}
+	s.mu.RUnlock()
+	for _, patch := range patches {
+		if patch == nil {
+			continue
+		}
+		if err := forge.SyncConfig(patch); err != nil {
+			s.AppendLog(fmt.Sprintf("同步配置到 RegiForge 失败：%v", err), "red")
+		}
+	}
 	// 真实链路：调 RegiForge 创建任务（对等 Python _start_task_locked POST /api/tasks）；
 	// 失败只记红日志，不伪造本地 task_id
 	taskID, err := forge.CreateTask(plan, threads)
@@ -539,10 +646,35 @@ func (s *Service) pollLoop(taskID string) {
 				level = "green"
 			}
 			s.appendLogLocked(fmt.Sprintf("RegiForge 任务结束：state=%s ok=%d failed=%d", state, s.cfg.Stats.Success, s.cfg.Stats.Fail), level)
+			// 连续失败熔断：本轮全部失败则计数 +1，有成功则清零
+			tripped := false
+			if state != "stopped" {
+				if s.cfg.Stats.Success == 0 {
+					s.consecutiveFail++
+					if s.cfg.MaxFailEnabled && s.consecutiveFail >= s.cfg.MaxFailRounds {
+						s.cfg.AutoRefill = false
+						s.cfg.AutoFollow = false
+						tripped = true
+						s.appendLogLocked(fmt.Sprintf("连续失败 %d 轮，已达上限 %d，自动停止注册并关闭自动注册", s.consecutiveFail, s.cfg.MaxFailRounds), "red")
+					} else if s.cfg.MaxFailEnabled {
+						s.appendLogLocked(fmt.Sprintf("本轮注册全部失败，连续失败 %d/%d 轮", s.consecutiveFail, s.cfg.MaxFailRounds), "red")
+					}
+				} else {
+					s.consecutiveFail = 0
+				}
+			}
 			s.saveLocked()
 			s.mu.Unlock()
 			if state == "stopped" {
 				s.AppendLog("任务已停止", "yellow")
+				return
+			}
+			if tripped {
+				if taskID != "" {
+					if err := forge.StopTask(taskID); err != nil {
+						s.AppendLog(fmt.Sprintf("停止请求失败：%v", err), "red")
+					}
+				}
 				return
 			}
 			s.maybeContinue()
@@ -624,7 +756,14 @@ func (s *Service) maybeContinue() {
 	}
 	threads := s.cfg.Threads
 	s.mu.RUnlock()
+	// 二次校验：AutoFollow 已被 Stop/熔断清掉时不得续跑
 	if !follow || mode != "total" || target <= 0 {
+		return
+	}
+	s.mu.RLock()
+	stopped := !s.cfg.AutoFollow || s.cfg.Stats.TaskID == ""
+	s.mu.RUnlock()
+	if stopped {
 		return
 	}
 	poolTotal := 0
@@ -650,6 +789,13 @@ func (s *Service) Stop() Config {
 	taskID := s.cfg.Stats.TaskID
 	s.cfg.Enabled = false
 	s.cfg.AutoFollow = false
+	// 停止即彻底停止：一并关闭自动注册，避免 refillLoop 下一轮巡检重新拉起任务
+	wasAutoRefill := s.cfg.AutoRefill
+	s.cfg.AutoRefill = false
+	s.consecutiveFail = 0
+	if wasAutoRefill {
+		s.appendLogLocked("已同时关闭自动注册，避免巡检重新拉起任务", "yellow")
+	}
 	s.appendLogLocked("正在停止任务", "yellow")
 	s.saveLocked()
 	clone := s.cfg
@@ -673,6 +819,9 @@ func (s *Service) Reset() Config {
 	s.logs = []LogEntry{}
 	s.cfg.Enabled = false
 	s.cfg.AutoFollow = false
+	// 重置同样关闭自动注册并清零连续失败计数
+	s.cfg.AutoRefill = false
+	s.consecutiveFail = 0
 	s.cfg.Stats = Stats{Threads: s.cfg.Threads, UpdatedAt: nowISO()}
 	s.saveLocked()
 	s.mu.Unlock()

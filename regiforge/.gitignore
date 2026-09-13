@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Runtime and browser artifacts
+*.log
+*.out
+*.out.log
+*.err.log
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.html
+!web/static/index.html
+tests/.logs/
+
+# 运行数据（含 config.json/keys/debug/tasks/logs，绝不入库）
+/data/
+!data/.gitkeep
+
+# Build output
+node_modules/
+dist/
+build/

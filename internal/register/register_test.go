@@ -73,6 +73,11 @@ func TestAutoRefillStartPlan(t *testing.T) {
 	// R3.4 真链路：Start 经 Client.CreateTask 调假 RegiForge
 	var creates int
 	forgeSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 配置同步（GET/PUT /api/config）不计入任务创建次数
+		if r.URL.Path == "/api/config" {
+			_, _ = w.Write([]byte(`{}`))
+			return
+		}
 		creates++
 		_, _ = w.Write([]byte(`{"task_id":"task-7"}`))
 	}))
