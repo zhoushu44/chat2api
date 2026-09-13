@@ -45,6 +45,32 @@
             <FilterToolbar class="accounts-toolbar-group accounts-toolbar-group-ops" :bordered="false" gap="tight">
               <Button
                 size="sm"
+                :variant="dailyCheckEnabled ? 'outline' : 'ghost'"
+                :root-class="accountToolbarButtonClass"
+                :disabled="dailyCheckBusy"
+                :title="dailyCheckEnabled ? `每日 ${String(dailyCheckHour).padStart(2, '0')}:00 401验活+协议恢复：已开启（点击关闭）` : '每日 401验活+协议恢复：已关闭（点击开启）'"
+                @click="toggleDailyCheck"
+              >
+                <span class="inline-flex items-center gap-1.5" :class="dailyCheckEnabled ? 'text-emerald-600' : ''">
+                  <span class="inline-block h-1.5 w-1.5 rounded-full" :class="dailyCheckEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/40'" />
+                  {{ dailyCheckEnabled ? '每日验活：开' : '每日验活：关' }}
+                </span>
+              </Button>
+              <Button
+                size="sm"
+                :variant="recoveryEnabled ? 'outline' : 'ghost'"
+                :root-class="accountToolbarButtonClass"
+                :disabled="recoveryBusy"
+                :title="recoveryEnabled ? 'AT 失效后走「邮箱+密码+TOTP」协议登录恢复（不等邮箱OTP）：已开启（点击关闭）' : '协议登录恢复：已关闭（点击开启）'"
+                @click="toggleRecovery"
+              >
+                <span class="inline-flex items-center gap-1.5" :class="recoveryEnabled ? 'text-emerald-600' : ''">
+                  <span class="inline-block h-1.5 w-1.5 rounded-full" :class="recoveryEnabled ? 'bg-emerald-500' : 'bg-muted-foreground/40'" />
+                  {{ recoveryEnabled ? '协议恢复：开' : '协议恢复：关' }}
+                </span>
+              </Button>
+              <Button
+                size="sm"
                 variant="outline"
                 :root-class="accountToolbarButtonClass"
                 :disabled="accountGroupsLoading"
@@ -800,6 +826,7 @@ import type { ActionMenuItem } from 'nanocat-ui'
 import { AccountActionButtons, AccountBulkBar, AccountSelectionSummary, FilterToolbar, FloatingActionMenu, FormSection, ImportModePanel, InfoCard, ListPagination, MetricStrip, ModalBody, ModalFooter, ModalHeader, ModalShell, PageLoadingState, PagePanel, ProgressBar, QuotaBadge, SelectableListPanel, StateBadge, StateBlock, SurfaceBox, TableShell, actionMenuGroups } from '@/components/ai'
 import GroupedSelectMenu from '@/components/ui/GroupedSelectMenu.vue'
 import type { Account } from '@/api/accounts'
+import { accountsApi } from '@/api/accounts'
 import { parseProxyReference } from '@/api/proxy'
 import { useAccountsPage, type AccountImportMode } from './accounts/useAccountsPage'
 import {
@@ -943,6 +970,54 @@ const {
   bindSelectedAccountsToGroup,
   exportAccounts,
 } = useAccountsPage()
+
+// ── 每日 401 验活 + 协议恢复开关（/api/scheduler） ─────────────────────────
+const dailyCheckEnabled = ref(false)
+const dailyCheckHour = ref(3)
+const dailyCheckBusy = ref(false)
+const recoveryEnabled = ref(true)
+const recoveryBusy = ref(false)
+
+async function loadDailyCheck() {
+  try {
+    const st = await accountsApi.getDailyCheck()
+    dailyCheckEnabled.value = st.enabled
+    dailyCheckHour.value = st.hour
+    recoveryEnabled.value = st.recovery
+  } catch {
+    /* 静默：面板未登录或后端过旧时隐藏即可 */
+  }
+}
+
+async function toggleDailyCheck() {
+  if (dailyCheckBusy.value) return
+  dailyCheckBusy.value = true
+  const next = !dailyCheckEnabled.value
+  try {
+    await accountsApi.setDailyCheck(next)
+    dailyCheckEnabled.value = next
+  } catch {
+    /* 保持原状态 */
+  } finally {
+    dailyCheckBusy.value = false
+  }
+}
+
+async function toggleRecovery() {
+  if (recoveryBusy.value) return
+  recoveryBusy.value = true
+  const next = !recoveryEnabled.value
+  try {
+    await accountsApi.setRecovery(next)
+    recoveryEnabled.value = next
+  } catch {
+    /* 保持原状态 */
+  } finally {
+    recoveryBusy.value = false
+  }
+}
+
+void loadDailyCheck()
 
 type BatchAction = 'refresh' | 'reset' | 'enable' | 'disable' | 'delete'
 type AccountActionMenuItem = ActionMenuItem & {

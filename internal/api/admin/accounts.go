@@ -80,30 +80,33 @@ func (h *AccountsHandler) List(c *gin.Context) {
 	items := make([]map[string]any, 0, len(pageItems))
 	for i, a := range pageItems {
 		items = append(items, map[string]any{
-			"id":                       i + start + 1,
-			"email":                    a.Email,
-			"access_token":             a.Token,
-			"token":                    a.Token,
-			"refresh_token":            a.RefreshToken,
-			"password":                 "", // 不暴露明文
-			"has_refresh_token":        a.RefreshToken != "",
-			"refresh_token_status":     map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
-			"type":                     a.Type,
-			"plan_type":                a.PlanType,
-			"source_type":              a.SourceType,
-			"status":                   a.Status,
-			"quota":                    a.Quota,
-			"quota_unknown":            a.QuotaUnknown,
-			"pending_auth_scope":       a.PendingAuthScope,
-			"user_id":                  "",
-			"proxy":                    "",
-			"chatimage_invalid_401":    a.ValidityStatus == "invalid",
-			"chatimage_import_status":  "not_imported",
-			"validity_status":          a.ValidityStatus,
-			"lifecycle_status":         a.LifecycleStatus,
-			"plan_state":               a.PlanState,
-			"checked_at":               a.CheckedAt,
-			"created_at":               "",
+			"id":                      i + start + 1,
+			"email":                   a.Email,
+			"access_token":            a.Token,
+			"token":                   a.Token,
+			"refresh_token":           a.RefreshToken,
+			"password":                "", // 不暴露明文
+			"has_password":            a.Password != "",
+			"has_totp":                a.TOTPSecret != "",
+			"recoverable":             a.Password != "" && a.TOTPSecret != "",
+			"has_refresh_token":       a.RefreshToken != "",
+			"refresh_token_status":    map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
+			"type":                    a.Type,
+			"plan_type":               a.PlanType,
+			"source_type":             a.SourceType,
+			"status":                  a.Status,
+			"quota":                   a.Quota,
+			"quota_unknown":           a.QuotaUnknown,
+			"pending_auth_scope":      a.PendingAuthScope,
+			"user_id":                 "",
+			"proxy":                   "",
+			"chatimage_invalid_401":   a.ValidityStatus == "invalid",
+			"chatimage_import_status": "not_imported",
+			"validity_status":         a.ValidityStatus,
+			"lifecycle_status":        a.LifecycleStatus,
+			"plan_state":              a.PlanState,
+			"checked_at":              a.CheckedAt,
+			"created_at":              "",
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -128,8 +131,8 @@ func (h *AccountsHandler) Stats(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"platform": "chatgpt",
-		"alive_accounts": alive,
+		"platform":                     "chatgpt",
+		"alive_accounts":               alive,
 		"historical_registered_emails": len(all),
 		"survival_rate": func() float64 {
 			if len(all) == 0 {
@@ -200,7 +203,7 @@ func (h *AccountsHandler) batchCreate(c *gin.Context, raw []byte) {
 		return ""
 	}
 
-	addOne := func(token, email, typ, sourceType string) {
+	addOne := func(token, email, typ, sourceType, password, totpSecret, sessionToken string) {
 		token = strings.TrimSpace(token)
 		if token == "" {
 			skipped++
@@ -211,6 +214,10 @@ func (h *AccountsHandler) batchCreate(c *gin.Context, raw []byte) {
 			Email:      email,
 			Type:       account.NormalizeAccountType(typ),
 			SourceType: account.NormalizeSourceType(sourceType),
+			// 恢复凭据：AT 失效时走「邮箱+密码+TOTP」协议登录恢复（不等邮箱 OTP）
+			Password:     strings.TrimSpace(password),
+			TOTPSecret:   strings.TrimSpace(totpSecret),
+			SessionToken: strings.TrimSpace(sessionToken),
 			// 注册/导入的 token 刚获取即可用；未检测前避免被 Pool.Available() 判为不可用
 			Status: account.StatusNormal,
 		}
@@ -227,7 +234,7 @@ func (h *AccountsHandler) batchCreate(c *gin.Context, raw []byte) {
 	}
 
 	for _, tok := range batch.Tokens {
-		addOne(tok, "", "Plus", "web")
+		addOne(tok, "", "Plus", "web", "", "", "")
 	}
 	for _, m := range batch.Accounts {
 		typ := field(m, "type")
@@ -238,7 +245,15 @@ func (h *AccountsHandler) batchCreate(c *gin.Context, raw []byte) {
 		if src == "" {
 			src = "web"
 		}
-		addOne(field(m, "access_token", "token"), field(m, "email"), typ, src)
+		addOne(
+			field(m, "access_token", "token"),
+			field(m, "email"),
+			typ,
+			src,
+			field(m, "password"),
+			field(m, "totp_secret"),
+			field(m, "session_token"),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"added": added, "skipped": skipped, "refreshed": refreshed,

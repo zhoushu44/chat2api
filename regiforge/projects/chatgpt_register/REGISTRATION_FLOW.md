@@ -100,10 +100,10 @@ Windows 注意：curl_cffi 的 `socks5://` 常报 `curl: (35) TLS connect error`
 | 键 | 类型 | 默认 | 生效模式 | 说明 |
 |---|---|---|---|---|
 | `register_mode` | select | `http` | 全部 | `http` \| `browser` |
-| `http_set_password` | checkbox | `true` | http | 注册链先 POST user/register 设密码再 OTP（v0.5.5 存活优势：无密码号只能靠临时邮箱收码登录，域名失效即永久丢失） |
+| （强制）设密码 | — | **强制** | http | 注册链先 POST user/register 设密码再 OTP（**不可关闭**：无密码号只能靠临时邮箱收码登录，域名失效即永久丢失）。失败 → `fail_http_no_password` |
 | `http_sentinel_refresh` | checkbox | `true` | http | QuickJS 按 flow 现算 Sentinel（`username_password_create` / `oauth_create_account`），flow 不匹配是风控特征；需要 Node |
 | `http_fetch_refresh_token` | checkbox | `true` | http | 注册后走 Codex OAuth 尝试换 refresh_token（详见 §15 已知限制：目前普遍被 add-phone 拦截） |
-| `http_bind_2fa` | checkbox | `false` | http | 注册成功后程序化绑定 TOTP 2FA（快路径，secret 只出现一次） |
+| （强制）绑 2FA | — | **强制** | http | 注册成功后程序化绑定 TOTP 2FA（**不可关闭**，secret 只出现一次）。失败 → `fail_http_no_2fa` |
 | `mail_timeout` | number | `180`（30~600） | 全部 | 收邮箱 OTP 超时秒数 |
 | `user_agent` | text | `""` | 全部 | 显式 UA；留空则每次注册随机 A+ 指纹 |
 | `browser_channel` | text | `chrome` | 全部 | 浏览器 channel |
@@ -122,8 +122,6 @@ Windows 注意：curl_cffi 的 `socks5://` 常报 `curl: (35) TLS connect error`
   "register_mode": "http",
   "http_fetch_refresh_token": true,
   "mail_timeout": 180,
-  "http_set_password": true,
-  "http_bind_2fa": false,
   "http_sentinel_refresh": true
 }
 ```
@@ -213,9 +211,9 @@ body: csrfToken=<csrf>   (x-www-form-urlencoded)
   - 回落 `chatgpt.com/auth/login`（未发 OTP）
   - `/log-in` 且无 signup → `RuntimeError("账号可能已存在")`（**不重试**，换邮箱）
 
-### [5] 邮箱 OTP（含密码注册，v0.5.5 存活优势核心）
+### [5] 邮箱 OTP（含密码注册，注册收口强制项）
 
-默认 `http_set_password=true` 时的完整子流程：
+设密码为**强制不变式**（无配置开关，失败即 `fail_http_no_password`，不再降级为无密码 OTP 路径）的完整子流程：
 
 1. 先收第一封 OTP（`wait_code`，若邮件没自动发也不死路）
 2. **密码注册** `_register_password`：
@@ -228,7 +226,7 @@ body: csrfToken=<csrf>   (x-www-form-urlencoded)
 5. **验证 OTP**：`POST /api/accounts/email-otp/validate`，body `{"code": <code>}`，带 sentinel 头（2026-07 起无头必 403）
    - **401 错码** → `resend` 补发一次 → `_wait_new_code(skip={旧码})` → 再 validate（v0.5.5 重试）
    - 非 200 → 失败
-6. 密码注册失败时降级：无密码 OTP 路径（`_send_otp` + 等码 + validate，用旧 sentinel）
+6. 设密码失败 → **不降级**，直接 `RuntimeError`（注册收口要求，不产出无密码账号）
 
 ### [7] 创建账号
 
@@ -264,16 +262,21 @@ PKCE S256（code_verifier=token_urlsafe(64)）
 
 拿到 code 后 `POST /oauth/token`（form：grant_type=authorization_code / client_id / code / redirect_uri / code_verifier）→ `refresh_token`。成功时返回的 `access_token` 会覆盖 [8] 的。
 
-### [8.6] 绑定 TOTP 2FA（可选，`http_bind_2fa=true`）
+### [8.6] 绑定 TOTP 2FA（注册收口强制项）
 
-快路径（注册会话"最近认证过"，enroll 不会 401 recent_auth_required，v0.5.5 实测 6.2s、零 PoW、零邮件）：
+强路径（注册会话"最近认证过"，enroll 不会 401 recent_auth_required，v0.5.5 实测 6.2s、零 PoW、零邮件）：
 
-1. `GET chatgpt.com/backend-api/accounts/mfa_info`（幂等：已绑则跳过）
+1. `GET chatgpt.com/backend-api/accounts/mfa_info`（幂等：已绑则跳过，但拿不到 secret → 视为失败）
 2. `POST /backend-api/accounts/mfa/enroll`，body `{"factor_type": "totp"}` → **secret 只在本次响应出现**
 3. 本地 `_totp_now(secret)`（RFC 6238，30s 窗口 6 位码）
 4. `POST /backend-api/accounts/mfa/user/activate_enrollment`，body `{code, factor_type, session_id}`（429 可等 60s 换码重试）
 
-失败返回 `{}`，**绝不影响注册主结果**。
+**强制不变式**：未拿到 `mfa_enabled=true` + 非空 `totp_secret` → `RuntimeError`，注册失败（`fail_http_no_2fa`），不产出。
+
+### [8.7] 立即验活（注册收口强制项）
+
+- `GET https://chatgpt.com/backend-api/me`（Bearer access_token，复用同一 session/代理/指纹），2xx 为通过
+- 非 2xx 或请求异常 → `RuntimeError`，注册失败（`fail_http_not_alive`），挡掉「刚签发就失效」的脏号
 
 ### [9] 完成
 
@@ -281,8 +284,9 @@ PKCE S256（code_verifier=token_urlsafe(64)）
 
 `project.py` 侧：
 - 无 token → `fail_http_no_token`
+- **注册收口校验**：无 password → `fail_http_no_password`；无 `mfa_enabled`/`totp_secret` → `fail_http_no_2fa`；验活未过已在 [8.7] 拦截 → 均**不写入产出、不导入号池**
 - 有 refresh_token → `_save_refresh_token` 追加写 `data/keys/chatgpt_register/refresh_tokens.jsonl`（`email|rt`，O_APPEND 原子写）
-- extra 带齐 `mode/type/source_type/plan_type/egress_*` 供号池与统计
+- extra 带齐 `mode/type/source_type/plan_type/egress_*` + `has_password=true / mfa_enabled=true / totp_secret / alive_verified=true`
 
 ---
 
@@ -443,12 +447,12 @@ cookie 由 `_apply_sentinel_cookies` 挂到 `.openai.com/.auth.openai.com/auth.o
 
 ## 10. 2FA 两种绑定方式
 
-| | http 模式（`http_bind_2fa=true`） | browser 模式（`enable_2fa=true` + step06） |
+| | http 模式（**强制**，无开关） | browser 模式（`enable_2fa=true` + step06） |
 |---|---|---|
 | 实现 | `_bind_totp_2fa` 程序化（mfa/enroll → 算码 → activate_enrollment） | step06 页面式（找 UI → 提 secret → 等验证） |
 | 耗时 | v0.5.5 实测 6.2s，零 PoW 零邮件 | 慢且依赖页面结构 |
 | secret | enroll 响应 JSON 直接取（只出现一次） | 二维码 otpauth / 页面文本正则 |
-| 失败影响 | 返回 `{}` 不影响注册 | 不影响注册 |
+| 失败影响 | **注册失败（`fail_http_no_2fa`），不产出** | 不影响注册 |
 | 推荐 | ✅ | 仅 browser 模式用 |
 
 TOTP 本地实现：RFC 6238（HMAC-SHA1，30s 窗口，6 位码），无第三方库。
@@ -542,7 +546,7 @@ TOTP 本地实现：RFC 6238（HMAC-SHA1，30s 窗口，6 位码），无第三�
 2. **账号生命周期受 revoke 限制**：无 RT 无法 keepalive，约 5-8h 窗口；用"注册→立即导入→立即生成"吃满窗口。
 3. **出口 IP 地区风控**：同 IP 临时 403 `unsupported_country_region_territory`（整段重试可过）；持续 403 换出口国家。
 4. **QuickJS 依赖 Node**：Node 缺失时 `http_sentinel_refresh` 静默降级（沿用 playwright 提取的 token，OTP 有 silent-drop 风险）。
-5. **browser 模式 step06（页面式 2FA）较旧**：推荐 http 模式 `http_bind_2fa`。
+5. **browser 模式 step06（页面式 2FA）较旧**：http 模式已强制程序化绑定 2FA。
 6. **禁改边界**：不迁入 oumiFree 的 IMAP/GUI/PIX；不复制邮箱/代理/打码实现进项目；Sentinel/HTTP 引擎仅本项目使用。
 
 ---

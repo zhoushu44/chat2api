@@ -16,27 +16,31 @@ const (
 )
 
 type Account struct {
-	ID               string            `json:"id"`
-	Token            string            `json:"token"`
-	Email            string            `json:"email"`
-	Type             string            `json:"type"`
-	SourceType       string            `json:"source_type"`
-	Status           string            `json:"status"`
-	Quota            int               `json:"quota"`
-	QuotaUnknown     bool              `json:"quota_unknown"`
-	PendingAuthScope bool              `json:"pending_auth_scope"`
-	RefreshToken     string            `json:"refresh_token"`
-	TokenExpireAt    int64             `json:"token_expire_at"`
-	PlanType         string            `json:"plan_type"`
-	FP               map[string]string `json:"fp"`
+	ID               string `json:"id"`
+	Token            string `json:"token"`
+	Email            string `json:"email"`
+	Type             string `json:"type"`
+	SourceType       string `json:"source_type"`
+	Status           string `json:"status"`
+	Quota            int    `json:"quota"`
+	QuotaUnknown     bool   `json:"quota_unknown"`
+	PendingAuthScope bool   `json:"pending_auth_scope"`
+	RefreshToken     string `json:"refresh_token"`
+	// 恢复凭据：AT 失效时用「邮箱 + Password + TOTPSecret」走协议登录恢复（不等邮箱 OTP）
+	Password        string            `json:"password,omitempty"`
+	SessionToken    string            `json:"session_token,omitempty"`
+	TOTPSecret      string            `json:"totp_secret,omitempty"`
+	TokenExpireAt   int64             `json:"token_expire_at"`
+	PlanType        string            `json:"plan_type"`
+	FP              map[string]string `json:"fp"`
 	LifecycleStatus string            `json:"lifecycle_status"`
 	ValidityStatus  string            `json:"validity_status"`
 	PlanState       string            `json:"plan_state"`
 	DisplayStatus   string            `json:"display_status"`
 	CheckedAt       int64             `json:"checked_at"`
 	Summary         map[string]any    `json:"summary,omitempty"`
-	nextAvailable int64
-	inflight      int32
+	nextAvailable   int64
+	inflight        int32
 }
 
 func (a *Account) Available() bool {
@@ -63,10 +67,10 @@ type shard struct {
 }
 
 type Pool struct {
-	mu      sync.RWMutex
-	byToken map[string]*Account
-	shards  [numShards]shard
-	cursor  atomic.Uint64
+	mu          sync.RWMutex
+	byToken     map[string]*Account
+	shards      [numShards]shard
+	cursor      atomic.Uint64
 	refresh     singleflight.Group
 	onRefresh   func(a *Account) (string, error)
 	refreshLead time.Duration
@@ -243,7 +247,9 @@ func (p *Pool) Pick(sel Selector) *Account {
 }
 
 func (p *Pool) Release(a *Account) { atomic.AddInt32(&a.inflight, -1) }
-func (p *Pool) Cooldown(a *Account, until time.Time) { atomic.StoreInt64(&a.nextAvailable, until.Unix()) }
+func (p *Pool) Cooldown(a *Account, until time.Time) {
+	atomic.StoreInt64(&a.nextAvailable, until.Unix())
+}
 func (p *Pool) EnsureFreshToken(a *Account) error {
 	if a.TokenExpireAt == 0 || time.Now().Add(p.refreshLead).Unix() < a.TokenExpireAt {
 		return nil

@@ -1,7 +1,6 @@
 # === 敏感数据 / 账号（绝不进镜像）===
 data/
 localtest-data/
-deploy/gray/data/
 accounts*.json
 accounts*.csv
 accounts*.txt
@@ -40,7 +39,4 @@ localtest-*.json
 docker-compose*.yml
 Makefile
 
-# === Python 原版源码（Go 镜像不需要，省体积）===
-chatgpt2api/
-
-# 保留构建必需：go.mod go.sum cmd/ internal/ web_dist/ Dockerfile
+# 保留构建必需：go.mod go.sum cmd/ internal/ web_dist/ regiforge/ Dockerfile

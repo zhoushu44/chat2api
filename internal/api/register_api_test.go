@@ -34,6 +34,9 @@ func TestRegisterAutoRefillAPI(t *testing.T) {
 		case r.URL.Path == "/api/tasks/task-e2e/stop":
 			stops++
 			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/config":
+			// 注册服务启动/续跑时会先读远端配置（GET /api/config），非任务创建
+			_, _ = w.Write([]byte(`{}`))
 		default:
 			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
 		}

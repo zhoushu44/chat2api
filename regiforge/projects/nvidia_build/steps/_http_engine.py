@@ -656,7 +656,6 @@ async def register_http(
 
     try:
         _log("[HTTP 引擎提示] 此为框架示例，需要抓包分析后填充实际 URL 和字段")
-        _log("[HTTP 引擎提示] 详见 projects/nvidia_build/HTTP_MODE.md")
         
         # 1. Bootstrap
         _log("[1/6] 加载注册页面...")

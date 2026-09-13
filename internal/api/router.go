@@ -19,6 +19,7 @@ import (
 	"chatgpt2api/internal/prompt"
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/register"
+	"chatgpt2api/internal/scheduler"
 	"chatgpt2api/internal/task"
 	"chatgpt2api/internal/utils"
 
@@ -46,6 +47,8 @@ type Server struct {
 	Auth *auth.Service
 	// P2.6c 账号 watcher
 	Watcher *account.Watcher
+	// 每日 401 验活 + 协议恢复调度器（main 组装后注入；注入前路由不挂开关）
+	Sched *scheduler.Scheduler
 }
 
 // NewServer 按 config 组装完整服务树（P0.1）。
@@ -163,6 +166,18 @@ func (s *Server) NewRouter() *gin.Engine {
 	}
 	if s.Accounts != nil {
 		(&admin.AccountsHandler{Accounts: s.Accounts, Pool: s.Pool}).Register(adminGroup)
+	}
+	// 调度器开关（账号页「每日401验活+协议恢复」）
+	if s.Sched != nil {
+		dir := ""
+		if s.Cfg != nil {
+			dir = s.Cfg.DataDir
+		}
+		defEnabled := true
+		if s.Cfg != nil {
+			defEnabled = s.Cfg.Scheduler.Enabled
+		}
+		(&admin.SchedulerHandler{Sched: s.Sched, DataDir: dir, DefEnabled: defEnabled}).Register(adminGroup)
 	}
 	if s.Cfg != nil {
 		(&admin.SystemHandler{Cfg: s.Cfg, Catalog: s.Catalog}).Register(adminGroup)

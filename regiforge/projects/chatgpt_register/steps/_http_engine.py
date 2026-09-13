@@ -803,6 +803,31 @@ def _bind_totp_2fa(session, *, access_token: str, fp: dict[str, Any], proxy_url:
     return {"totp_secret": secret, "mfa_enabled": True}
 
 
+def _verify_alive(session, *, access_token: str, fp: dict[str, Any], proxy_url: str | None, log: LogFn) -> None:
+    """注册后立即验活：GET /backend-api/me，2xx 视为有效。
+
+    挡掉「刚签发就被 revoke」的脏号，避免污染号池 / 拉低存活率统计。
+    失败抛 RuntimeError（注册收口要求，不产出）。
+    """
+    headers = {
+        **_browser_headers(fp, "application/json"),
+        "Authorization": f"Bearer {access_token}",
+        "Origin": CHAT_BASE,
+        "Referer": f"{CHAT_BASE}/",
+    }
+    try:
+        r = session.get(
+            f"{CHAT_BASE}/backend-api/me",
+            headers=headers,
+            **_req_kwargs(proxy_url, fp=fp, timeout=30),
+        )
+    except Exception as exc:
+        raise RuntimeError(f"验活失败（请求异常）: {str(exc)[:160]}") from exc
+    if r.status_code < 200 or r.status_code >= 300:
+        raise RuntimeError(f"验活失败 [{r.status_code}]: {str(r.text)[:160]}")
+    log(f"  [验活] /backend-api/me {r.status_code} OK")
+
+
 def _register_sync(
     *,
     email: str,
@@ -811,8 +836,6 @@ def _register_sync(
     proxy_url: str | None,
     fp: dict[str, Any],
     fetch_refresh_token: bool,
-    set_password: bool,
-    bind_2fa: bool,
     sentinel_refresh: bool,
     mail_timeout: float = 180,
     log: LogFn,
@@ -998,7 +1021,8 @@ def _register_sync(
             raise RetriableRegisterError(f"OAuth 回落登录页（未发 OTP）: {cp[:160]}")
         log(f"  [提示] 未直接落到 email-verification，仍按流程等 OTP: {cp[:100]}")
 
-    # [5] Email OTP — 新账号先设密码（v0.5.5 存活优势：完整账号属性 + 会话完整性）
+    # [5] Email OTP — 强制先设密码（存活优势：无密码号只能靠临时邮箱收码登录，
+    #     邮箱域名失效即永久丢失；本项为注册收口的硬性不变式，不可关闭）
     log("[5/9] 邮箱验证码...")
     t0 = time.time()
     password_set = False
@@ -1006,28 +1030,19 @@ def _register_sync(
     if not first_code:
         # 邮箱没自动发码不一定是死路：密码注册流程本身会主动发码
         first_code = ""
-    if set_password:
-        pw_ok, token, so_token = _register_password(
-            session, email=email, password=password, device_id=oai_did, fp=fp, proxy_url=proxy_url, log=log
-        )
-        if pw_ok:
-            password_set = True
-            # 成功后服务端切流程，旧 OTP 立即失效；用刷新后的 flow token 主动重发
-            sd["sentinel_token"] = token
-            sd["sentinel_so_token"] = so_token
-            if not _send_otp(session, fp=fp, proxy_url=proxy_url, token=token, so_token=so_token, log=log):
-                _resend_otp(session, fp=fp, proxy_url=proxy_url, token=token, so_token=so_token)
-            code = _wait_new_code(wait_code_sync, email, skip={first_code} if first_code else set(), mail_timeout=mail_timeout, log=log)
-        else:
-            log("  [密码注册] 失败，走无密码 OTP 路径")
-            if not _send_otp(
-                session, fp=fp, proxy_url=proxy_url,
-                token=sd.get("sentinel_token", ""), so_token=sd.get("sentinel_so_token", ""), log=log,
-            ):
-                _resend_otp(session, fp=fp, proxy_url=proxy_url, token=sd.get("sentinel_token", ""), so_token=sd.get("sentinel_so_token", ""))
-            code = _wait_new_code(wait_code_sync, email, skip={first_code} if first_code else set(), mail_timeout=mail_timeout, log=log) or (first_code or None)
-    else:
-        code = first_code or wait_code_sync(email)
+    pw_ok, token, so_token = _register_password(
+        session, email=email, password=password, device_id=oai_did, fp=fp, proxy_url=proxy_url, log=log
+    )
+    if not pw_ok:
+        # 强制收口：设密码失败即注册失败，不降级为无密码 OTP，避免产出无法恢复的账号
+        raise RuntimeError("设密码失败：无法保证账号可脱离邮箱恢复（注册收口要求）")
+    password_set = True
+    # 成功后服务端切流程，旧 OTP 立即失效；用刷新后的 flow token 主动重发
+    sd["sentinel_token"] = token
+    sd["sentinel_so_token"] = so_token
+    if not _send_otp(session, fp=fp, proxy_url=proxy_url, token=token, so_token=so_token, log=log):
+        _resend_otp(session, fp=fp, proxy_url=proxy_url, token=token, so_token=so_token)
+    code = _wait_new_code(wait_code_sync, email, skip={first_code} if first_code else set(), mail_timeout=mail_timeout, log=log)
     if not code:
         raise RuntimeError("邮箱验证码获取失败（超时或未收到）")
     log(f"  验证码: {str(code)[:2]}**** ({time.time() - t0:.1f}s)")
@@ -1159,11 +1174,17 @@ def _register_sync(
     if not access_token:
         raise RuntimeError("注册流程完成但未拿到 accessToken")
 
-    # [8.6] 绑定 TOTP 2FA（v0.5.5 快路径：注册会话直接 enroll，secret 只出现一次）
-    totp = {}
-    if bind_2fa:
-        log("  [2FA] 绑定 TOTP...")
-        totp = _bind_totp_2fa(session, access_token=access_token, fp=fp, proxy_url=proxy_url, log=log)
+    # [8.6] 强制绑定 TOTP 2FA（v0.5.5 快路径：注册会话直接 enroll，secret 只出现一次）
+    # 注册收口不变式：拿到 TOTP secret 才能用「邮箱+密码+TOTP」脱离邮箱 OTP 恢复账号
+    log("  [2FA] 绑定 TOTP...")
+    totp = _bind_totp_2fa(session, access_token=access_token, fp=fp, proxy_url=proxy_url, log=log)
+    if not (totp.get("mfa_enabled") and totp.get("totp_secret")):
+        # 强制收口：绑定失败（含幂等分支拿不到 secret）即注册失败，不产出无法恢复的账号
+        raise RuntimeError("绑定 TOTP 2FA 失败：无法保证账号可脱离邮箱恢复（注册收口要求）")
+
+    # [8.7] 立即验活：auth access_token 当场校验（挡掉「刚签发就失效」的脏号）
+    log("  [验活] /backend-api/me ...")
+    _verify_alive(session, access_token=access_token, fp=fp, proxy_url=proxy_url, log=log)
 
     log(f"[9/9] 完成: {email}")
     log(
@@ -1195,8 +1216,6 @@ async def register_http(
     browser_backend: str = "playwright",
     mail_timeout: float = 180,
     fetch_refresh_token: bool = True,
-    set_password: bool = True,
-    bind_2fa: bool = False,
     sentinel_refresh: bool = True,
     max_attempts: int = 3,
     reacquire_proxy: Callable[[], Awaitable[ProxyInfo | None]] | None = None,
@@ -1212,11 +1231,11 @@ async def register_http(
         避免坏实例让 3 次重试全部重蹈覆辙。
 
     返回 dict: email / password / access_token / session_token / refresh_token / name
-    set_password=True: 新账号先 POST user/register 设密码（v0.5.5 存活优势，
-        否则账号只能靠临时邮箱收码登录，域名失效即永久丢失）
+    注册收口（强制，不可关闭）：先 POST user/register 设密码（否则账号只能靠临时邮箱
+        收码登录，域名失效即永久丢失）→ 绑定 TOTP 2FA → GET /backend-api/me 立即验活。
+        三者任一失败即判注册失败，不产出，避免污染号池。
     sentinel_refresh=True: QuickJS 按 flow 现算 sentinel（authorize 用 playwright 提取，
         建号/设密码按 flow 现算，flow 不匹配是风控特征）
-    bind_2fa=True: 注册成功后程序化绑定 TOTP 2FA（secret 只在 enroll 响应出现一次）
     """
     _require_curl_cffi()
     _log: LogFn = log or (lambda m: None)
@@ -1357,8 +1376,6 @@ async def register_http(
                 proxy_url=proxy_url,
                 fp=fp,
                 fetch_refresh_token=fetch_refresh_token,
-                set_password=set_password,
-                bind_2fa=bind_2fa,
                 sentinel_refresh=sentinel_refresh,
                 mail_timeout=mail_timeout,
                 log=_log,

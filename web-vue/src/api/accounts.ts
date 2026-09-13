@@ -1,4 +1,4 @@
-﻿import apiClient from './client'
+import apiClient from './client'
 import type { ProxyGroup } from './proxy'
 
 export type AccountLane = 'fast' | 'thinking' | 'pro'
@@ -580,6 +580,21 @@ async function deleteAccountsByIds(accountIdsOrTokens: string[]) {
 }
 
 export const accountsApi = {
+  getDailyCheck: async () => {
+    const response = await apiClient.get<
+      never,
+      { enabled?: boolean; hour?: number; concurrency?: number; recovery?: boolean }
+    >('/api/scheduler')
+    return { enabled: !!response.enabled, hour: response.hour ?? 0, recovery: response.recovery !== false }
+  },
+
+  setDailyCheck: (enabled: boolean) =>
+    apiClient.put<{ enabled: boolean }, { enabled: boolean }>('/api/scheduler', { enabled }),
+
+  // 协议登录恢复细粒度开关（AT 失效时走密码+TOTP 恢复）
+  setRecovery: (recovery: boolean) =>
+    apiClient.put<{ recovery: boolean }, { recovery: boolean }>('/api/scheduler', { recovery }),
+
   list: async (params?: AccountListParams) => {
     const response = await apiClient.get<never, BackendAccountsResponse>('/api/accounts', {
       params: params || undefined,

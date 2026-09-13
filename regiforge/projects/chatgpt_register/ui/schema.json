@@ -39,24 +39,6 @@
       "visible_when": { "field_key": "register_mode", "eq": "http" }
     },
     {
-      "key": "http_set_password",
-      "label": "HTTP 模式设置账号密码",
-      "type": "checkbox",
-      "config_path": "projects.chatgpt_register.http_set_password",
-      "default": true,
-      "help": "仅 http。注册链先 POST user/register 设密码再 OTP（v0.5.5 存活优势）：无密码号只能靠临时邮箱收码登录，域名失效即永久丢失。",
-      "visible_when": { "field_key": "register_mode", "eq": "http" }
-    },
-    {
-      "key": "http_bind_2fa",
-      "label": "HTTP 模式绑定 TOTP 2FA",
-      "type": "checkbox",
-      "config_path": "projects.chatgpt_register.http_bind_2fa",
-      "default": false,
-      "help": "仅 http。注册成功后程序化绑定 TOTP 2FA（v0.5.5 快路径，secret 只出现一次），提升账号保活能力。",
-      "visible_when": { "field_key": "register_mode", "eq": "http" }
-    },
-    {
       "key": "http_sentinel_refresh",
       "label": "HTTP 模式按 flow 现算 Sentinel",
       "type": "checkbox",
