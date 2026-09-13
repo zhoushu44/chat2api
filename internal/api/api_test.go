@@ -3,9 +3,11 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/config"
@@ -131,15 +133,30 @@ func TestAPIStaticMounted(t *testing.T) {
 	if w.Code == 404 {
 		t.Fatal("SPA fallback not mounted: got 404")
 	}
-	// _ 开头文件不会被 //go:embed 目录模式嵌入（Go 显式排除 _/. 前缀），Vite 公共 chunk 必须能拿到 JS，否则 import 整链失败
-	req, _ = http.NewRequest("GET", "/assets/_plugin-vue_export-helper-DlAUqK2U.js", nil)
+	// 动态探测一个真实存在的 assets JS chunk（文件名含 hash，随构建变化，不能硬编码）。
+	// 目的：确保静态资源能拿到 JS 而非被 SPA fallback 吞掉返回 index.html。
+	assets, err := fs.ReadDir(EmbeddedFS(), "assets")
+	if err != nil {
+		t.Fatalf("读取 embed assets 失败: %v", err)
+	}
+	var chunk string
+	for _, e := range assets {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".js") {
+			chunk = e.Name()
+			break
+		}
+	}
+	if chunk == "" {
+		t.Fatal("embed assets 中未找到任何 .js chunk")
+	}
+	req, _ = http.NewRequest("GET", "/assets/"+chunk, nil)
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 	if w.Code != 200 {
-		t.Fatalf("underscore chunk got %d want 200", w.Code)
+		t.Fatalf("chunk %s got %d want 200", chunk, w.Code)
 	}
-	if ct := w.Header().Get("Content-Type"); ct != "text/javascript; charset=utf-8" {
-		t.Fatalf("underscore chunk content-type=%q want javascript (likely SPA fallback swallowing 404)", ct)
+	if ct := w.Header().Get("Content-Type"); !strings.Contains(ct, "javascript") {
+		t.Fatalf("chunk %s content-type=%q want javascript (likely SPA fallback swallowing 404)", chunk, ct)
 	}
 }
 

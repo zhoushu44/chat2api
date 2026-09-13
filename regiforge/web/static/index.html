@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RegiForge 共用注册控制台</title>
+  <style>
+    .fields-grid > .field-item > input[data-field-key="api_url"] { max-width: 100%; }
+    :root {
+      --bg: #f5f6f8;
+      --surface: #ffffff;
+      --surface-soft: #fafafa;
+      --line: #dedfe3;
+      --line-strong: #c8c9ce;
+      --text: #171717;
+      --muted: #6f7075;
+      --accent: #191919;
+      --success: #16804f;
+      --danger: #bd3c3c;
+      --shadow: 0 8px 24px rgba(20, 20, 20, .06);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 30px 24px; overflow-x: hidden; }
+    h1 { margin: 0 0 6px; font-size: 24px; letter-spacing: -.02em; }
+    .sub { color: var(--muted); margin-bottom: 20px; font-size: 13px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, .95fr); gap: 18px; width: 100%; max-width: 100%; }
+    .grid > .card { min-width: 0; max-width: 100%; overflow: hidden; }
+    @media (max-width: 1000px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+    .card { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 18px; box-shadow: var(--shadow); }
+    .card h2 { margin: 0 0 14px; font-size: 15px; font-weight: 600; }
+    .card h3 { margin: 18px 0 9px; font-size: 12px; color: var(--muted); font-weight: 600; }
+    label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+    select, input, textarea { width: 100%; min-width: 0; background: var(--surface-soft); color: var(--text); border: 1px solid var(--line); border-radius: 14px; padding: 11px 12px; outline: none; }
+    select:focus, input:focus, textarea:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(0,0,0,.04); }
+    .row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .fields-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 12px; align-items: start; }
+    .fields-grid > .field-item.full, .fields-grid > .field-item[data-span="2"] { grid-column: 1 / -1; }
+    .fields-grid > .field-item > input[data-field-key="api_url"] { width: 389px; }
+    @media (max-width: 700px) { .fields-grid { grid-template-columns: 1fr; } .fields-grid > .field-item.full, .fields-grid > .field-item[data-span="2"] { grid-column: auto; } }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 15px; }
+    button { border: 1px solid var(--line); border-radius: 999px; padding: 10px 16px; font-weight: 600; cursor: pointer; transition: transform .15s ease, background .15s ease; }
+    button:hover { transform: translateY(-1px); }
+    .btn-primary, .btn-ok { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-danger { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .btn-ghost { background: var(--surface); color: var(--muted); }
+    #btnStart, #btnStop { flex: 1 1 180px; }
+    .status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 15px; }
+    .pill { display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px; color: var(--text); font-size: 13px; }
+    .pill.ok { color: var(--success); border-color: #cfe8db; }
+    .pill.bad { color: var(--danger); border-color: #efd2d2; }
+    .pill.run { color: var(--text); border-color: var(--line-strong); }
+    #logs { height: 280px; overflow: auto; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.45; background: #f8f8f8; border-radius: 16px; padding: 14px; border: 1px solid var(--line); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 9px; }
+    .outbox { margin-top: 18px; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: var(--surface-soft); }
+    .outbox-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--surface); border-bottom: 1px solid var(--line); }
+    .outbox-head h2 { margin: 0; font-size: 14px; font-weight: 600; }
+    .outbox-copy { border: none; background: none; color: var(--muted); cursor: pointer; font-size: 12px; padding: 2px 8px; border-radius: 8px; transition: background .15s, color .15s; }
+    .outbox-copy:hover { background: var(--line); color: var(--text); }
+    .outbox-copy.copied { color: var(--success); }
+    .outbox-body { max-height: 200px; overflow: auto; padding: 10px 14px; font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+    .outbox-tabs { display: flex; align-items: center; gap: 4px; }
+    .outbox-tab { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 8px; padding: 3px 10px; font-size: 12px; cursor: pointer; transition: all .15s; }
+    .outbox-tab.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .outbox-actions { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+    .btn-sm { padding: 6px 12px; font-size: 12px; }
+    .outbox-stats { display: flex; gap: 8px; flex-wrap: wrap; padding: 8px 14px; background: var(--surface-soft); border-bottom: 1px solid var(--line); }
+    .outbox-stat { font-size: 12px; color: var(--muted); }
+    .outbox-stat b { color: var(--text); font-size: 13px; }
+    .outbox-table { max-height: 320px; overflow: auto; }
+    #accountTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+    #accountTable thead { position: sticky; top: 0; z-index: 1; }
+    #accountTable th { background: var(--surface); border-bottom: 1px solid var(--line); padding: 7px 10px; text-align: left; font-weight: 600; white-space: nowrap; }
+    #accountTable td { border-bottom: 1px solid var(--line); padding: 6px 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
+    #accountTable tr:hover td { background: var(--surface-soft); }
+    #accountTable .empty-row td { text-align: center; color: var(--muted); padding: 20px; }
+    .summary { font-size: 13px; color: var(--text); background: var(--surface-soft); border: none; border-radius: 14px; padding: 11px 12px; margin-bottom: 8px; }
+    .steps { list-style: none; margin: 0; padding: 0; max-height: 280px; overflow: auto; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
+    .steps li { padding: 11px 12px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; }
+    .steps li:last-child { border-bottom: 0; }
+    .steps .sid { color: var(--muted); font-weight: 700; font-size: 12px; }
+    .steps .st { font-size: 13px; font-weight: 600; }
+    .steps .sd { font-size: 12px; color: var(--muted); margin-top: 2px; overflow-wrap: anywhere; }
+    .notes { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
+    .help { max-height: 200px; overflow: auto; font-size: 12px; line-height: 1.5; color: var(--muted); white-space: pre-wrap; background: var(--surface-soft); border: 1px solid var(--line); border-radius: 14px; padding: 11px; }
+    .modal-body { font-size: 13px; color: var(--text); line-height: 1.6; }
+    .modal-body label { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 8px 0; }
+    .modal-body input[type="radio"] { width: auto; }
+    .modal-warning { color: var(--danger); font-size: 12px; margin-top: 8px; }
+    .field-help { font-size: 11px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+    .folder-picker { display: flex; align-items: center; gap: 10px; margin: 10px 0 14px; min-width: 0; }
+    .folder-picker-name { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+    .group-title { margin-top: 14px; padding-top: 11px; border-top: 1px dashed var(--line); font-size: 13px; color: var(--text); font-weight: 600; }
+    .group-title:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
+    .project-nav { display: flex; gap: 8px; flex-wrap: wrap; margin: 0 0 18px; }
+    .project-nav a { color: var(--muted); text-decoration: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 7px 12px; font-size: 12px; }
+    .project-nav a.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+    .isolated-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal-card { background: var(--surface); border-radius: 16px; padding: 20px; max-width: 420px; width: 90%; box-shadow: var(--shadow); }
+    .modal-card h3 { margin: 0 0 12px; font-size: 15px; }
+    .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+    @media (max-width: 700px) { .status { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wrap { padding: 20px 14px; } }
+
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>RegiForge 共用注册控制台</h1>
+    
+    <div class="project-nav" id="projectNav"></div>
+    
+
+    <div class="grid">
+      <div class="card">
+        <h2>运行任务</h2>
+        <label>注册项目</label>
+        <select id="project_id"></select>
+        <div class="summary" id="projectSummary">选择项目后显示说明与步骤规划</div>
+
+        <div class="fields-grid" style="margin-top:4px">
+          <div class="field-item" id="captchaField">
+            <label>验证码</label>
+            <select id="captcha_id"></select>
+          </div>
+          <div class="field-item" id="emailField">
+            <label>邮箱系统</label>
+            <select id="email_id"></select>
+          </div>
+          <div class="field-item" id="smsField">
+            <label>短信系统</label>
+            <select id="sms_id"></select>
+          </div>
+          <div class="field-item">
+            <label>代理类型</label>
+            <select id="proxy_id"></select>
+          </div>
+        </div>
+
+        <div class="row3" style="margin-top:8px">
+          <div>
+            <label>注册数量（total）</label>
+            <input id="total" type="number" min="1" value="1" />
+            
+          </div>
+          <div>
+            <label>起始编号（start）</label>
+            <input id="start" type="number" min="1" value="1" />
+            <div class="field-help">首个账号编号，用于断点续跑。</div>
+          </div>
+          <div>
+            <label>并发数（concurrency）</label>
+            <input id="concurrency" type="number" min="1" value="1" />
+            <div class="field-help">同时运行数。</div>
+          </div>
+        </div>
+        <div class="row">
+          <div>
+            <label>启动间隔（stagger，秒）</label>
+            <input id="stagger" type="number" min="0" value="0" />
+            <div class="field-help">每个账号启动错开秒数。</div>
+          </div>
+          <div id="headlessField">
+            <label>无头模式（headless）</label>
+            <select id="headless">
+              <option value="false">否（有头）</option>
+              <option value="true">是（无头）</option>
+            </select>
+            <div class="field-help">仅支持可切换浏览器显示模式的项目。</div>
+          </div>
+        </div>
+
+        <div id="projectFields"></div>
+
+        <div class="actions">
+          <button class="btn-ok" id="btnStart">启动任务</button>
+          <button class="btn-danger" id="btnStop">停止</button>
+          <button class="btn-ghost" id="btnRefreshKeys">刷新产出</button>
+        </div>
+        <div class="status">
+          <span class="pill" id="taskState">未开始</span>
+          <span class="pill" id="taskProgress">0/0</span>
+          <span class="pill ok" id="taskOk">成功 0</span>
+          <span class="pill bad" id="taskFail">失败 0</span>
+        </div>
+        
+
+        <div class="outbox">
+          <div class="outbox-head">
+            <h2 id="outputTitle">最近产出</h2>
+            <div class="outbox-tabs">
+              <button class="outbox-tab active" data-view="table">表格</button>
+              <button class="outbox-tab" data-view="text">文本</button>
+              <button class="outbox-copy" data-copy="keysBox">复制</button>
+            </div>
+          </div>
+          <div class="outbox-actions">
+            <button class="btn-ghost btn-sm" id="btnImport" type="button" style="display:none">导入</button>
+            <button class="btn-ghost btn-sm" id="btnExportTxt" type="button">导出 TXT</button>
+            <button class="btn-ghost btn-sm" id="btnExportJson" type="button" style="display:none">导出 JSON</button>
+            <button class="btn-ghost btn-sm" id="btnClearKeys" type="button">清理</button>
+          </div>
+          <div class="hint" id="exportMsg" style="padding:6px 14px 0;min-height:16px"></div>
+          <div class="outbox-stats" id="accountStats"></div>
+          <div class="outbox-table" id="accountTableWrap">
+            <table id="accountTable"><thead></thead><tbody></tbody></table>
+          </div>
+          <div class="outbox-body" id="keysBox" style="display:none">暂无</div>
+        </div>
+
+      </div>
+
+      <div class="card">
+        <h2>项目步骤（只读规划）</h2>
+        <ul class="steps" id="stepsList"><li><div class="sid">—</div><div><div class="st">未选择项目</div></div></li></ul>
+        <ul class="notes" id="notesList"></ul>
+        <h3>项目说明</h3>
+        <div class="help" id="helpBox">—</div>
+
+        <h2 style="margin-top:18px">Provider 配置</h2>
+        <div id="providerFields"></div>
+        <div id="exportFields"></div>
+        <div class="actions">
+          <button class="btn-primary" id="btnSaveCfg">保存配置</button>
+          <button class="btn-ghost" id="btnReloadCfg">重新加载</button>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <h2>任务日志</h2>
+      <div id="logs">等待任务...</div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modalRoot" style="display:none" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <h3 id="modalTitle"></h3>
+      <div class="modal-body" id="modalBody"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="modalCancel" type="button">取消</button>
+        <button class="btn-primary" id="modalOk" type="button">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let meta = null;
+    let config = null;
+    let currentUi = null;
+    let currentTaskId = null;
+    let logOffset = 0;
+    let pollTimer = null;
+    let pollErrCount = 0;
+    let lastOkCount = 0;
+    let keysOutputDirValue = "";
+    const fieldEls = {}; // path -> element
+
+    const $ = (id) => document.getElementById(id);
+
+    function getByPath(obj, path) {
+      if (!path) return undefined;
+      return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    }
+
+    function setByPath(obj, path, value) {
+      const parts = path.split(".");
+      let cur = obj;
+      for (let i = 0; i < parts.length - 1; i++) {
+        const k = parts[i];
+        if (cur[k] == null || typeof cur[k] !== "object") cur[k] = {};
+        cur = cur[k];
+      }
+      cur[parts[parts.length - 1]] = value;
+    }
+
+    function fillSelect(sel, items, valueKey, labelFn, current) {
+      sel.innerHTML = "";
+      (items || []).forEach((item) => {
+        const opt = document.createElement("option");
+        opt.value = item[valueKey];
+        opt.textContent = labelFn(item);
+        sel.appendChild(opt);
+      });
+      if (current && [...sel.options].some(o => o.value === current)) sel.value = current;
+    }
+
+    function currentProject() {
+      const id = $("project_id").value;
+      return (meta?.projects || []).find(p => p.id === id) || null;
+    }
+
+    function projectState(projectId = $("project_id").value) {
+      return config?.ui?.project_state?.[projectId] || {};
+    }
+
+    function projectIdFromPath() {
+      const match = location.pathname.match(/^\/projects\/([^/]+)\/?$/);
+      return match ? decodeURIComponent(match[1]) : "";
+    }
+
+    function renderProjectNav() {
+      const nav = $("projectNav");
+      if (!nav) return;
+      nav.innerHTML = "";
+      (meta?.projects || []).forEach(project => {
+        const link = document.createElement("a");
+        link.href = `/projects/${encodeURIComponent(project.id)}`;
+        link.textContent = project.name;
+        if (project.id === $("project_id").value) link.className = "active";
+        nav.appendChild(link);
+      });
+    }
+
+    function matchWhen(when) {
+      if (!when) return true;
+      if (when.captcha_id && when.captcha_id !== $("captcha_id").value) return false;
+      if (when.email_id && when.email_id !== $("email_id").value) return false;
+      if (when.sms_id && when.sms_id !== $("sms_id").value) return false;
+      if (when.proxy_id && when.proxy_id !== $("proxy_id").value) return false;
+      if (when.exporter_id && when.exporter_id !== currentExportId()) return false;
+      return true;
+    }
+
+    /** 当前项目导入目标（由 schema.json import.exporter_id 决定，不再手选） */
+    function currentExportId() {
+      return currentUi?.import?.exporter_id || "";
+    }
+
+    function isExportPath(path) {
+      return String(path || "").startsWith("export.");
+    }
+
+    function isFullWidthField(field) {
+      const type = field?.type || "text";
+      if (field?.full === true || field?.span === 2 || field?.col_span === 2) return true;
+      if (type === "textarea") return true;
+      return false;
+    }
+
+    /** 读取项目参数区中某个 field_key 的当前值（用于 visible_when） */
+    function getProjectFieldValue(fieldKey) {
+      if (!fieldKey) return "";
+      // 只取控件本身，避免命中外层 .field-item[data-field-key]
+      const el = document.querySelector(
+        `#projectFields select[data-field-key="${CSS.escape(fieldKey)}"],` +
+        `#projectFields input[data-field-key="${CSS.escape(fieldKey)}"],` +
+        `#projectFields textarea[data-field-key="${CSS.escape(fieldKey)}"]`
+      );
+      if (el) return el.value;
+      // 控件尚未挂载时，回退配置
+      const fields = currentUi?.fields || [];
+      const def = fields.find(f => f.key === fieldKey);
+      if (def?.config_path) {
+        const v = getByPath(config, def.config_path);
+        return v == null ? "" : String(v);
+      }
+      return "";
+    }
+
+    /**
+     * schema.fields[].visible_when：
+     *   { "field_key": "register_mode", "eq": "http" }
+     *   { "field_key": "register_mode", "in": ["http", "browser"] }
+     *   { "field_key": "register_mode", "neq": "browser" }
+     * 无 visible_when → 始终显示。隐藏仅影响 UI，不删配置值。
+     */
+    function evalVisibleWhen(vw) {
+      if (!vw) return true;
+      const key = vw.field_key || vw.field;
+      const val = String(getProjectFieldValue(key));
+      if (vw.eq != null && String(vw.eq) !== val) return false;
+      if (vw.neq != null && String(vw.neq) === val) return false;
+      if (Array.isArray(vw.in) && !vw.in.map(String).includes(val)) return false;
+      if (Array.isArray(vw.not_in) && vw.not_in.map(String).includes(val)) return false;
+      return true;
+    }
+
+    function applyProjectFieldVisibility() {
+      document.querySelectorAll("#projectFields .field-item[data-visible-when]").forEach(wrap => {
+        let vw = null;
+        try { vw = JSON.parse(wrap.dataset.visibleWhen || "null"); } catch (_) { vw = null; }
+        wrap.style.display = evalVisibleWhen(vw) ? "" : "none";
+      });
+    }
+
+    function createFieldControl(field) {
+      const wrap = document.createElement("div");
+      wrap.className = "field-item" + (isFullWidthField(field) ? " full" : "");
+      if (isFullWidthField(field)) wrap.dataset.span = "2";
+      if (field.key) wrap.dataset.fieldKey = field.key;
+      if (field.visible_when) {
+        wrap.dataset.visibleWhen = JSON.stringify(field.visible_when);
+      }
+      const lab = document.createElement("label");
+      lab.textContent = field.label || field.key;
+      wrap.appendChild(lab);
+
+      let el;
+      const type = field.type || "text";
+      if (type === "textarea") {
+        el = document.createElement("textarea");
+        el.rows = field.rows || 3;
+      } else if (type === "select" && Array.isArray(field.options)) {
+        el = document.createElement("select");
+        field.options.forEach(opt => {
+          const o = document.createElement("option");
+          if (typeof opt === "string") { o.value = opt; o.textContent = opt; }
+          else { o.value = opt.value; o.textContent = opt.label || opt.value; }
+          el.appendChild(o);
+        });
+      } else if (type === "number") {
+        el = document.createElement("input");
+        el.type = "number";
+        if (field.min != null) el.min = field.min;
+        if (field.max != null) el.max = field.max;
+      } else if (type === "checkbox") {
+        el = document.createElement("select");
+        el.innerHTML = `<option value="false">否</option><option value="true">是</option>`;
+      } else if (type === "folder") {
+        const picker = document.createElement("div");
+        picker.className = "folder-picker";
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "btn-ghost";
+        button.textContent = "选择文件夹";
+        el = document.createElement("input");
+        el.type = "file";
+        el.hidden = true;
+        el.setAttribute("webkitdirectory", "");
+        el.setAttribute("directory", "");
+        const name = document.createElement("span");
+        name.className = "folder-picker-name";
+        name.textContent = field.placeholder || "未选择文件夹";
+        button.addEventListener("click", () => el.click());
+        picker.append(button, el, name);
+        wrap.appendChild(picker);
+        el.dataset.folderNameTarget = "";
+        el.addEventListener("change", () => {
+          const file = el.files?.[0];
+          const relativePath = file?.webkitRelativePath || "";
+          const folder = relativePath.split("/")[0];
+          const fullPath = relativePath.replace(/\/.*/, "");
+          el.dataset.folderPath = fullPath || "";
+          name.textContent = fullPath || field.placeholder || "未选择文件夹";
+        });
+      } else {
+        el = document.createElement("input");
+        el.type = type === "password" ? "password" : "text";
+      }
+      if (field.placeholder && type !== "folder") el.placeholder = field.placeholder;
+      el.dataset.configPath = field.config_path || "";
+      el.dataset.fieldKey = field.key || "";
+      const rawVal = getByPath(config, field.config_path);
+      const val = (rawVal != null && rawVal !== "") ? rawVal : (field.default ?? null);
+      if (val != null && val !== "") {
+        if (type === "checkbox") el.value = String(!!val);
+        else if (type === "textarea" && (typeof val === "object")) el.value = JSON.stringify(val, null, 2);
+        else if (type !== "folder") el.value = val;
+      }
+      // 模式切换等控制字段变更时，刷新依赖字段显隐
+      el.addEventListener("change", () => {
+        if (type === "folder") {
+          const file = el.files?.[0];
+          const relativePath = file?.webkitRelativePath || "";
+          el.dataset.folderPath = relativePath.split("/")[0] || "";
+        }
+        applyProjectFieldVisibility();
+      });
+      el.addEventListener("input", () => applyProjectFieldVisibility());
+      if (type !== "folder") wrap.appendChild(el);
+      if (field.help) {
+        const h = document.createElement("div");
+        h.className = "field-help";
+        h.textContent = field.help;
+        wrap.appendChild(h);
+      }
+      if (field.config_path) fieldEls[field.config_path] = el;
+      return wrap;
+    }
+
+    /** 把字段列表装进统一双列网格（所有项目同一布局） */
+    function appendFieldsGrid(parent, fields) {
+      if (!fields?.length) return null;
+      const grid = document.createElement("div");
+      grid.className = "fields-grid";
+      fields.forEach(f => { if (!f.hidden) grid.appendChild(createFieldControl(f)); });
+      parent.appendChild(grid);
+      applyProjectFieldVisibility();
+      return grid;
+    }
+
+    function clearFieldEls() {
+      Object.keys(fieldEls).forEach(k => delete fieldEls[k]);
+    }
+
+    function applyProjectUi() {
+      clearFieldEls();
+      const p = currentProject();
+      const ui = p?.ui || { summary: "", steps: [], fields: [], notes: [], help_md: "", output: {} };
+      currentUi = ui;
+
+      $("projectSummary").textContent = ui.summary || p?.description || "（无项目说明，请补充 projects/" + (p?.id||"") + "/ui/schema.json）";
+
+      // defaults for task params if no last ui memory preferred
+      const d = ui.defaults || {};
+      if (d.total != null && !config?.ui?.last_total) $("total").value = d.total;
+      if (d.concurrency != null && config?.ui?.last_concurrency == null) $("concurrency").value = d.concurrency;
+
+      // steps
+      const steps = ui.steps || [];
+      const list = $("stepsList");
+      list.innerHTML = "";
+      if (!steps.length) {
+        list.innerHTML = `<li><div class="sid">—</div><div><div class="st">未提供步骤规划</div><div class="sd">在 projects/${p?.id||"..."}/ui/schema.json 的 steps 中声明</div></div></li>`;
+      } else {
+        steps.forEach(s => {
+          const li = document.createElement("li");
+          li.innerHTML = `<div class="sid">${s.id || ""}</div><div><div class="st">${s.title || ""}</div><div class="sd">${s.desc || ""}${s.file ? " · " + s.file : ""}</div></div>`;
+          list.appendChild(li);
+        });
+      }
+
+      // notes
+      const notes = $("notesList");
+      notes.innerHTML = "";
+      (ui.notes || []).forEach(n => {
+        const li = document.createElement("li");
+        li.textContent = n;
+        notes.appendChild(li);
+      });
+
+      $("helpBox").textContent = ui.help_md || "（无 help.md）";
+      $("outputTitle").textContent = (ui.output && ui.output.title) || "最近产出";
+
+      // 通用任务选项按项目能力显隐；隐藏时保留配置，但启动任务固定发送安全默认值。
+      const taskUi = ui.task_ui || {};
+      const showHeadless = taskUi.show_headless === true;
+      $("headlessField").style.display = showHeadless ? "" : "none";
+      if (!showHeadless) $("headless").value = "false";
+
+      // project-specific fields — 所有项目统一双列，禁止 ChatGPT 等因字段多而视觉上变成单列
+      const box = $("projectFields");
+      box.innerHTML = "";
+      const fields = ui.fields || [];
+      if (fields.length) {
+        const t = document.createElement("h3");
+        t.textContent = "项目参数";
+        box.appendChild(t);
+        appendFieldsGrid(box, fields);
+      }
+
+      filterProviders();
+      renderProviderFields();
+      renderExportFields();
+      applyOutboxActions();
+      refreshKeys();
+    }
+
+    function applyOutboxActions() {
+      const importCfg = currentUi?.import;
+      const importBtn = $("btnImport");
+      if (!importBtn) return;
+      const exporterExists = (meta?.exporters || []).some(item => item.id === importCfg?.exporter_id);
+      if (importCfg?.exporter_id && exporterExists) {
+        importBtn.textContent = importCfg.label || "导入";
+        importBtn.style.display = "";
+      } else {
+        importBtn.style.display = "none";
+      }
+      // 项目 schema 声明 export_json 时才显示「导出 JSON」按钮
+      const jsonBtn = $("btnExportJson");
+      if (jsonBtn) {
+        const ej = currentUi?.export_json;
+        jsonBtn.style.display = ej ? "" : "none";
+        if (ej?.label) jsonBtn.textContent = ej.label;
+      }
+    }
+
+    function filterProviders() {
+      const p = currentProject();
+      const ui = p?.ui || {};
+      const types = ui.required_captcha_types || p?.required_captcha_types || [];
+      const allowC = ui.allowed_captcha_ids || [];
+      let captchas = meta.captchas || [];
+      if (types.length) captchas = captchas.filter(c => types.includes(c.type));
+      if (allowC.length) captchas = captchas.filter(c => allowC.includes(c.id));
+
+      let emails = meta.emails || [];
+      const allowE = ui.allowed_email_ids || [];
+      if (allowE.length) emails = emails.filter(e => allowE.includes(e.id));
+
+      let sms = meta.sms || [];
+      const allowS = ui.allowed_sms_ids || [];
+      if (allowS.length) sms = sms.filter(s => allowS.includes(s.id));
+
+      let proxies = meta.proxies || [];
+      const allowP = ui.allowed_proxy_ids || [];
+      if (allowP.length) proxies = proxies.filter(x => allowP.includes(x.id));
+
+      const state = projectState();
+      const preferredProxy = state.proxy_id || config?.ui?.last_proxy_id || "socks5";
+      const usesCaptcha = types.length > 0 || allowC.length > 0;
+      const usesEmail = allowE.length > 0;
+      const usesSms = allowS.length > 0;
+
+      $("captchaField").style.display = usesCaptcha ? "" : "none";
+      $("emailField").style.display = usesEmail ? "" : "none";
+      $("smsField").style.display = usesSms ? "" : "none";
+      fillSelect($("captcha_id"), usesCaptcha ? captchas : [], "id", c => `${c.type} / ${c.name}`, state.captcha_id || config?.ui?.last_captcha_id);
+      fillSelect($("email_id"), usesEmail ? emails : [], "id", e => e.name, state.email_id || config?.ui?.last_email_id);
+      fillSelect($("sms_id"), usesSms ? sms : [], "id", s => s.name, state.sms_id || config?.ui?.last_sms_id);
+      fillSelect($("proxy_id"), proxies, "id", x => x.name, preferredProxy);
+    }
+
+    function isExportGroup(group) {
+      return !!(group?.when && group.when.exporter_id);
+    }
+
+    function renderProviderFields() {
+      // captcha / email / proxy 配置；不含 export.*
+      const box = $("providerFields");
+      const groups = meta?.provider_ui?.groups || [];
+      box.innerHTML = "";
+      let any = false;
+      groups.forEach(g => {
+        if (isExportGroup(g)) return;
+        if (!matchWhen(g.when)) return;
+        any = true;
+        const title = document.createElement("div");
+        title.className = "group-title";
+        title.textContent = g.title || "配置";
+        box.appendChild(title);
+        (g.fields || []).forEach(f => {
+          if (f.config_path) delete fieldEls[f.config_path];
+        });
+        appendFieldsGrid(box, g.fields || []);
+      });
+      if (!any) {
+        box.innerHTML = `<div class="hint">当前 Provider 无额外配置项（或尚未在 web/ui/providers.json 声明）。</div>`;
+      }
+    }
+
+    function renderExportFields() {
+      const box = $("exportFields");
+      if (!box) return;
+      // 清掉旧的 export.* 字段绑定
+      Object.keys(fieldEls).forEach(path => {
+        if (isExportPath(path)) delete fieldEls[path];
+      });
+      box.innerHTML = "";
+      // 无导入目标（如 nvidia_build）→ 不渲染任何导出配置
+      if (!currentExportId()) return;
+      const groups = meta?.provider_ui?.groups || [];
+      let any = false;
+      groups.forEach(g => {
+        if (!isExportGroup(g)) return;
+        if (!matchWhen(g.when)) return;
+        any = true;
+        const title = document.createElement("div");
+        title.className = "group-title";
+        title.textContent = g.title || "导入参数";
+        box.appendChild(title);
+        (g.fields || []).forEach(f => {
+          if (f.config_path) delete fieldEls[f.config_path];
+        });
+        appendFieldsGrid(box, g.fields || []);
+      });
+      if (!any) {
+        box.innerHTML = `<div class="hint">当前导入目标无参数，或尚未在 web/ui/providers.json 声明 exporter 组。</div>`;
+      }
+    }
+
+    function parseKeysLines(lines) {
+      const accounts = [];
+      (lines || []).forEach(line => {
+        const text = String(line || "").trim();
+        if (!text || text.startsWith("#")) return;
+        const idx = text.indexOf("|");
+        if (idx < 0) {
+          // 仅凭据（如 Grok sso 单列）时 email 留空
+          if (text) accounts.push({ email: "", credential: text });
+          return;
+        }
+        const email = text.slice(0, idx).trim();
+        const credential = text.slice(idx + 1).trim();
+        if (credential) accounts.push({ email, credential });
+      });
+      return accounts;
+    }
+
+    function collectConfigFromFields() {
+      const c = structuredClone(config || {});
+      const projectId = $("project_id").value;
+      setByPath(c, "ui.last_project_id", projectId);
+      setByPath(c, `ui.project_state.${projectId}`, {
+        ...(c.ui?.project_state?.[projectId] || {}),
+        captcha_id: $("captcha_id").value,
+        email_id: $("email_id").value,
+        sms_id: $("sms_id").value,
+        proxy_id: $("proxy_id").value,
+        total: Number($("total").value || 1),
+        start: Number($("start").value || 1),
+        concurrency: Number($("concurrency").value || 1),
+        stagger: Number($("stagger").value || 0),
+        headless: $("headless").value === "true",
+      });
+      setByPath(c, "ui.keys_output_dir", keysOutputDirValue);
+      Object.entries(fieldEls).forEach(([path, el]) => {
+        if (!path || !el) return;
+        let v = el.type === "file" ? (el.dataset.folderPath || "") : el.value;
+        if (el.tagName === "SELECT" && (v === "true" || v === "false") && el.options?.length === 2) {
+          // checkbox-as-select
+          if ([...el.options].every(o => o.value === "true" || o.value === "false")) {
+            v = v === "true";
+          }
+        }
+        if (el.type === "number" && v !== "" && !Number.isNaN(Number(v))) {
+          v = Number(v);
+        }
+        setByPath(c, path, typeof v === "string" ? v.trim() : v);
+      });
+      return c;
+    }
+
+    async function loadAll() {
+      const [m, c] = await Promise.all([
+        fetch("/api/meta").then(r => r.json()),
+        fetch("/api/config").then(r => r.json()),
+      ]);
+      meta = m;
+      config = c;
+      const routeProjectId = projectIdFromPath();
+      const routeProjectExists = (meta.projects || []).some(p => p.id === routeProjectId);
+      const selectedProjectId = routeProjectExists ? routeProjectId : c.ui?.last_project_id;
+      fillSelect($("project_id"), meta.projects || [], "id", p => `${p.name} (${p.id})`, selectedProjectId);
+      const selectedState = c.ui?.project_state?.[selectedProjectId] || {};
+      $("total").value = selectedState.total ?? c.ui?.last_total ?? 1;
+      $("start").value = selectedState.start ?? c.ui?.last_start ?? 1;
+      $("concurrency").value = selectedState.concurrency ?? c.ui?.last_concurrency ?? 1;
+      $("stagger").value = selectedState.stagger ?? c.ui?.last_stagger ?? 0;
+      $("headless").value = String(selectedState.headless ?? !!c.ui?.last_headless);
+      keysOutputDirValue = c.ui?.keys_output_dir ?? "";
+      applyProjectUi();
+      renderProjectNav();
+    }
+
+    async function saveConfig() {
+      const body = { config: collectConfigFromFields() };
+      const res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      config = await res.json();
+      $("taskMsg") && ($("taskMsg").textContent = "配置已保存到 data/config.json");
+    }
+
+    async function startTask() {
+      await saveConfig();
+      const payload = {
+        project_id: $("project_id").value,
+        captcha_id: $("captcha_id").value,
+        email_id: $("email_id").value,
+        sms_id: $("sms_id").value,
+        proxy_id: $("proxy_id").value,
+        total: Number($("total").value || 1),
+        start: Number($("start").value || 1),
+        concurrency: Number($("concurrency").value || 1),
+        stagger: Number($("stagger").value || 0),
+        headless: Boolean(currentUi?.task_ui?.show_headless === true && $("headless").value === "true"),
+      };
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        $("taskMsg") && ($("taskMsg").textContent = data.detail || "启动失败");
+        return;
+      }
+      currentTaskId = data.task_id;
+      logOffset = 0;
+      $("logs").textContent = "";
+      updateStatus(data);
+      startPolling();
+    }
+
+    async function stopTask() {
+      if (!currentTaskId) return;
+      const res = await fetch(`/api/tasks/${currentTaskId}/stop`, { method: "POST" });
+      updateStatus(await res.json());
+    }
+
+    function updateStatus(data) {
+      if (!data) return;
+      $("taskState").textContent = data.state || "-";
+      $("taskState").className = "pill " + (data.state === "running" ? "run" : data.state === "done" ? "ok" : "");
+      $("taskProgress").textContent = `${data.done || 0}/${data.total || 0}`;
+      $("taskOk").textContent = `成功 ${data.ok || 0}`;
+      $("taskFail").textContent = `失败 ${data.failed || 0}`;
+      $("taskMsg") && ($("taskMsg").textContent = data.message || "");
+    }
+
+    async function pollOnce() {
+      if (!currentTaskId) return;
+      try {
+        const [stResp, logsResp] = await Promise.all([
+          fetch(`/api/tasks/${currentTaskId}`),
+          fetch(`/api/tasks/${currentTaskId}/logs?offset=${logOffset}`),
+        ]);
+        // 任务已不存在（服务器重启 / 任务被清理）→ 停止轮询，避免无限 404 刷屏
+        if (stResp.status === 404) {
+          stopPolling();
+          const box = $("logs");
+          box.textContent += (box.textContent ? "\n" : "") + "⚠ 任务已不存在（服务器可能已重启），轮询已停止。";
+          await refreshKeys();
+          return;
+        }
+        if (!stResp.ok) throw new Error(`task status ${stResp.status}`);
+        const st = await stResp.json();
+        let logs = { lines: [] };
+        if (logsResp.ok) logs = await logsResp.json();
+        pollErrCount = 0;
+        updateStatus(st);
+        if ((st.ok || 0) > lastOkCount) {
+          lastOkCount = st.ok || 0;
+          refreshKeys();
+        }
+        if (logs.lines?.length) {
+          const box = $("logs");
+          box.textContent += (box.textContent ? "\n" : "") + logs.lines.join("\n");
+          box.scrollTop = box.scrollHeight;
+          logOffset = logs.total;
+        }
+        if (["done", "failed", "stopped"].includes(st.state)) {
+          stopPolling();
+          await refreshKeys();
+        }
+      } catch (err) {
+        // 网络抖动（服务器重启中）→ 静默退避，不刷控制台；连续失败多次再停
+        pollErrCount += 1;
+        if (pollErrCount >= 5) {
+          stopPolling();
+          const box = $("logs");
+          box.textContent += (box.textContent ? "\n" : "") + "⚠ 与服务器连接多次失败，轮询已停止，请检查服务是否运行。";
+        }
+      }
+    }
+
+    function startPolling() {
+      stopPolling();
+      pollErrCount = 0;
+      lastOkCount = 0;
+      pollTimer = setInterval(pollOnce, 1000);
+      pollOnce();
+    }
+    function stopPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollTimer = null;
+    }
+
+    function formatCopyValue(value, path) {
+      const raw = getNested(value, path);
+      return raw == null ? "" : String(raw);
+    }
+
+    function getAccountCopyText(data) {
+      const format = currentUi?.output?.copy_format;
+      if (!format) return $("keysBox")?.textContent || "";
+      return (data.accounts || []).map(account => format.replace(/\{\{([^}]+)\}\}/g, (_, path) => {
+        return formatCopyValue(account, path.trim());
+      })).filter(Boolean).join("\n");
+    }
+
+    // 复制当前项目定义的账号导入格式
+    document.addEventListener("click", async (e) => {
+      const btn = e.target.closest(".outbox-copy");
+      if (!btn) return;
+      const pid = $("project_id").value || "nvidia_build";
+      const limit = currentUi?.output?.preview_limit || 50;
+      const data = await fetch(`/api/keys/${pid}?limit=${limit}`).then(r => r.json());
+      const text = getAccountCopyText(data);
+      try {
+        await navigator.clipboard.writeText(text);
+        btn.textContent = "已复制";
+        btn.classList.add("copied");
+        setTimeout(() => { btn.textContent = "复制"; btn.classList.remove("copied"); }, 1500);
+      } catch { btn.textContent = "失败"; setTimeout(() => { btn.textContent = "复制"; }, 1500); }
+    });
+
+    async function refreshKeys() {
+      const pid = $("project_id").value || "nvidia_build";
+      const limit = currentUi?.output?.preview_limit || 50;
+      const data = await fetch(`/api/keys/${pid}?limit=${limit}`).then(r => r.json());
+      const empty = currentUi?.output?.empty_hint || "暂无";
+      if (!data.lines?.length) {
+        $("keysBox").textContent = `${empty}\n路径: ${data.file}`;
+      } else {
+        const fmt = currentUi?.output?.line_format ? `格式: ${currentUi.output.line_format}\n` : "";
+        $("keysBox").textContent = `${fmt}共 ${data.count} 条\n` + data.lines.join("\n");
+      }
+      renderAccountTable(data);
+      return data;
+    }
+
+    function getNested(obj, path) {
+      return path.split(".").reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    }
+
+    function fmtDatetime(iso) {
+      if (!iso) return "-";
+      try {
+        const d = new Date(iso);
+        const mm = String(d.getMonth() + 1).padStart(2, "0");
+        const dd = String(d.getDate()).padStart(2, "0");
+        const hh = String(d.getHours()).padStart(2, "0");
+        const mi = String(d.getMinutes()).padStart(2, "0");
+        return `${mm}-${dd} ${hh}:${mi}`;
+      } catch { return "-"; }
+    }
+
+    function isToday(iso) {
+      if (!iso) return false;
+      try {
+        const d = new Date(iso);
+        const now = new Date();
+        return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+      } catch { return false; }
+    }
+
+    function renderAccountTable(data) {
+      const columns = currentUi?.account_columns || [
+        {"key": "email", "label": "Email"},
+        {"key": "apikey", "label": "凭证", "preview": 20},
+      ];
+      const accounts = data.accounts || [];
+      const thead = document.querySelector("#accountTable thead");
+      const tbody = document.querySelector("#accountTable tbody");
+
+      // 表头
+      thead.innerHTML = columns.map(c => `<th>${c.label}</th>`).join("");
+
+      // 统计：今日新增用后端全量统计（data.today_count），不受分页 limit 限制
+      const todayCount = data.today_count ?? accounts.filter(a => isToday(a.registered_at)).length;
+      $("accountStats").innerHTML = `
+        <span class="outbox-stat">总计 <b>${data.count}</b></span>
+        <span class="outbox-stat">本页 <b>${accounts.length}</b></span>
+        <span class="outbox-stat">今日新增 <b>${todayCount}</b></span>
+      `;
+
+      // 表体
+      if (!accounts.length) {
+        const empty = currentUi?.output?.empty_hint || "暂无";
+        tbody.innerHTML = `<tr class="empty-row"><td colspan="${columns.length}">${empty}</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = accounts.map(acc => {
+        return "<tr>" + columns.map(col => {
+          let val = getNested(acc, col.key);
+          if (val == null || val === "") {
+            return "<td>-</td>";
+          }
+          if (col.type === "datetime") {
+            return `<td>${fmtDatetime(val)}</td>`;
+          }
+          if (col.preview && typeof val === "string" && val.length > col.preview) {
+            return `<td title="${val}">${val.slice(0, col.preview)}...</td>`;
+          }
+          return `<td title="${val}">${val}</td>`;
+        }).join("") + "</tr>";
+      }).join("");
+    }
+
+    // 视图切换
+    document.addEventListener("click", (e) => {
+      const tab = e.target.closest(".outbox-tab");
+      if (!tab) return;
+      const view = tab.dataset.view;
+      document.querySelectorAll(".outbox-tab").forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      const tableWrap = $("accountTableWrap");
+      const statsEl = $("accountStats");
+      const textBox = $("keysBox");
+      if (view === "table") {
+        tableWrap.style.display = "";
+        statsEl.style.display = "";
+        textBox.style.display = "none";
+      } else {
+        tableWrap.style.display = "none";
+        statsEl.style.display = "none";
+        textBox.style.display = "";
+      }
+    });
+
+    let modalConfirm = null;
+
+    function closeModal() {
+      $("modalRoot").style.display = "none";
+      $("modalBody").innerHTML = "";
+      modalConfirm = null;
+    }
+
+    function openModal({ title, body, onOk }) {
+      $("modalTitle").textContent = title;
+      $("modalBody").innerHTML = body;
+      modalConfirm = onOk;
+      $("modalRoot").style.display = "flex";
+      $("modalOk").focus();
+    }
+
+    async function runExport(exporterId) {
+      const msg = $("exportMsg"); if (!msg) return;
+      try {
+        await saveConfig();
+        if (!exporterId) {
+          msg.textContent = "请先选择导出目标";
+          return;
+        }
+        const pid = $("project_id").value || "nvidia_build";
+        const data = await fetch(`/api/keys/${pid}?limit=5000`).then(r => r.json());
+        const accounts = parseKeysLines(data.lines || []);
+        if (!accounts.length) {
+          msg.textContent = "当前项目没有可导出的产出行（需要 email|credential）";
+          return;
+        }
+        msg.textContent = `正在导出 ${accounts.length} 条 → ${exporterId} ...`;
+        const res = await fetch("/api/export", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ exporter_id: exporterId, project_id: pid, accounts }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          msg.textContent = body.detail || `导出失败 HTTP ${res.status}`;
+          return;
+        }
+        const status = body.status || "-";
+        const exported = body.exported != null ? body.exported : "?";
+        const imported = body.imported != null ? body.imported : null;
+        const detail = body.detail || "";
+        let resultText = `导出完成：status=${status}，导出 ${exported} 条`;
+        if (imported !== null) resultText += `，导入 ${imported} 条`;
+        msg.textContent = resultText + (detail ? ` · ${detail}` : "");
+        if (Array.isArray(body.consumed_credentials) && body.consumed_credentials.length) {
+          const consumed = await fetch(`/api/keys/${encodeURIComponent(body.project_id || pid)}/consume`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ credentials: body.consumed_credentials }),
+          });
+          const consumedBody = await consumed.json().catch(() => ({}));
+          msg.textContent += `，最近产出已删除 ${consumedBody.removed || 0} 条`;
+          await refreshKeys();
+        }
+      } catch (err) {
+        msg.textContent = "导出失败: " + err;
+      }
+    }
+
+    async function openImportConfirm() {
+      const importCfg = currentUi?.import;
+      const exporterId = importCfg?.exporter_id;
+      const exporter = (meta?.exporters || []).find(item => item.id === exporterId);
+      if (!exporter) return;
+      const pid = $("project_id").value || "nvidia_build";
+      const data = await fetch(`/api/keys/${pid}?limit=5000`).then(r => r.json());
+      const count = parseKeysLines(data.lines || []).length;
+      if (!count) {
+        $("exportMsg").textContent = "当前项目没有可导入账号";
+        return;
+      }
+      openModal({
+        title: importCfg.label || "确认导入",
+        body: `<div>${importCfg.confirm_hint || "确认导入当前账号？"}</div><div>目标：${exporter.name || exporterId}，账号数量：${count}</div><div class="modal-warning">${importCfg.confirm_warning || ""}（${count} 条）</div>`,
+        onOk: async () => {
+          closeModal();
+          await runExport(exporterId);
+        },
+      });
+    }
+
+    async function openClearConfirm() {
+      const pid = $("project_id").value || "nvidia_build";
+      const data = await fetch(`/api/keys/${pid}?limit=1`).then(r => r.json());
+      const count = Number(data.count || 0);
+      if (!count) {
+        $("exportMsg").textContent = "当前项目账号池已经为空";
+        return;
+      }
+      openModal({
+        title: "确认清理账号池",
+        body: `<div>项目：${pid}</div><div>将清理 ${count} 条账号。</div><div class="modal-warning">此操作会同时清空 TXT 和 JSONL，且无法撤销。</div>`,
+        onOk: async () => {
+          const res = await fetch(`/api/keys/${encodeURIComponent(pid)}`, { method: "DELETE" });
+          const body = await res.json().catch(() => ({}));
+          closeModal();
+          if (!res.ok) {
+            $("exportMsg").textContent = body.detail || `清理失败 HTTP ${res.status}`;
+            return;
+          }
+          $("exportMsg").textContent = `已清理 ${body.removed || 0} 条账号（TXT + JSONL）`;
+          await refreshKeys();
+        },
+      });
+    }
+
+    function txtFilename(pid) {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+      return `${pid}_accounts_${stamp}.txt`;
+    }
+
+    function openTxtExport() {
+      openModal({
+        title: "导出 TXT",
+        body: `<label><input type="radio" name="txtFormat" value="email" checked> 带邮箱（email|apikey）</label><label><input type="radio" name="txtFormat" value="credential"> 不带邮箱（仅 apikey）</label>`,
+        onOk: async () => {
+          const pid = $("project_id").value || "nvidia_build";
+          const data = await fetch(`/api/keys/${pid}?limit=5000`).then(r => r.json());
+          const lines = (data.lines || []).filter(line => line.trim());
+          if (!lines.length) {
+            closeModal();
+            $("exportMsg").textContent = "当前项目没有可导出的账号";
+            return;
+          }
+          const format = document.querySelector('input[name="txtFormat"]:checked')?.value || "email";
+          const rows = format === "email" ? lines : lines.map(line => line.split("|").pop().trim());
+          const url = URL.createObjectURL(new Blob([rows.join("\n") + "\n"], { type: "text/plain;charset=utf-8" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = txtFilename(pid);
+          link.click();
+          URL.revokeObjectURL(url);
+          closeModal();
+          $("exportMsg").textContent = `已下载 ${rows.length} 条：${link.download}`;
+        },
+      });
+    }
+
+    function jsonFilename(pid) {
+      const d = new Date();
+      const pad = n => String(n).padStart(2, "0");
+      const stamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}`;
+      const prefix = currentUi?.export_json?.filename_prefix || `${pid}_profiles`;
+      return `${prefix}_${stamp}.json`;
+    }
+
+    // 导出 ZCode Switcher 可导入的 JSON（schema=zcode-switcher-account/v1）。
+    // 逐账号生成单账号 JSON；多账号时合并为一个账号包（schema=zcode-switcher-accounts/v1）。
+    function buildZcodeSwitcherJson(accounts) {
+      const ej = currentUi?.export_json || {};
+      const family = ej.family || "zai";
+      const mode = ej.mode || "oauth";
+      const list = accounts.map(acc => {
+        const email = (acc.email || "").trim();
+        const jwt = (acc.credential || acc.apikey || "").trim();
+        const user_id = (acc.user_id || acc.extra?.user_id || "").trim();
+        return {
+          schema: "zcode-switcher-account/v1",
+          exported_at: Date.now() / 1000,
+          profile: {
+            name: email.split("@")[0] || "",
+            user_id,
+            email,
+            phone: "",
+            avatar: "",
+          },
+          credentials: {
+            zcodejwttoken: jwt,
+            "oauth:active_provider": family,
+          },
+          family,
+          mode,
+          provider_api_keys: {},
+        };
+      }).filter(a => a.profile.email && a.credentials.zcodejwttoken);
+      if (!list.length) return "";
+      if (list.length === 1) {
+        return JSON.stringify(list[0], null, 2);
+      }
+      return JSON.stringify({
+        schema: "zcode-switcher-accounts/v1",
+        exported_at: Date.now() / 1000,
+        accounts: list,
+      }, null, 2);
+    }
+
+    function openJsonExport() {
+      openModal({
+        title: currentUi?.export_json?.label || "导出 JSON",
+        body: `<div>将导出为 ZCode Switcher 可导入的账号 JSON。</div><div class="modal-warning">JSON 含明文 JWT，请妥善保存。</div>`,
+        onOk: async () => {
+          const pid = $("project_id").value || "nvidia_build";
+          const data = await fetch(`/api/keys/${pid}?limit=5000`).then(r => r.json());
+          const accounts = (data.accounts || []).map(a => ({
+            email: a.email,
+            apikey: a.apikey,
+            user_id: a.extra?.user_id,
+            registered_at: a.registered_at,
+          }));
+          // 无 JSONL 时从 TXT 行回退
+          if (!accounts.length) {
+            accounts.push(...parseKeysLines(data.lines || []));
+          }
+          const filtered = accounts.filter(a => (a.email || "").trim() && ((a.apikey || a.credential || "").trim()));
+          if (!filtered.length) {
+            closeModal();
+            $("exportMsg").textContent = "当前项目没有可导出的账号（需要 email + accessToken）";
+            return;
+          }
+          const json = buildZcodeSwitcherJson(filtered);
+          if (!json) {
+            closeModal();
+            $("exportMsg").textContent = "没有有效的账号数据（email 或 accessToken 缺失）";
+            return;
+          }
+          const url = URL.createObjectURL(new Blob([json], { type: "application/json;charset=utf-8" }));
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = jsonFilename(pid);
+          link.click();
+          URL.revokeObjectURL(url);
+          closeModal();
+          $("exportMsg").textContent = `已导出 ${filtered.length} 条：${link.download}`;
+        },
+      });
+    }
+
+    $("project_id").addEventListener("change", async () => {
+      // 切换项目之前先保存当前项目，避免下拉选择被页面跳转丢弃
+      await saveConfig();
+      renderProjectNav();
+      location.href = `/projects/${encodeURIComponent($("project_id").value)}`;
+    });
+    $("captcha_id").addEventListener("change", async () => {
+      renderProviderFields();
+      await saveConfig();
+    });
+    $("email_id").addEventListener("change", async () => {
+      renderProviderFields();
+      await saveConfig();
+    });
+    $("sms_id").addEventListener("change", async () => {
+      renderProviderFields();
+      await saveConfig();
+    });
+    $("proxy_id").addEventListener("change", async () => {
+      renderProviderFields();
+      await saveConfig();
+    });
+    $("btnStart").onclick = startTask;
+    $("btnStop").onclick = stopTask;
+    $("btnSaveCfg").onclick = saveConfig;
+    $("btnReloadCfg").onclick = loadAll;
+    $("btnRefreshKeys").onclick = refreshKeys;
+    $("btnImport").onclick = openImportConfirm;
+    $("btnExportTxt").onclick = openTxtExport;
+    $("btnExportJson").onclick = openJsonExport;
+    $("btnClearKeys").onclick = openClearConfirm;
+    $("modalCancel").onclick = closeModal;
+    $("modalOk").onclick = async () => {
+      if (modalConfirm) await modalConfirm();
+    };
+    $("modalRoot").addEventListener("click", event => {
+      if (event.target === $("modalRoot")) closeModal();
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && $("modalRoot").style.display !== "none") closeModal();
+    });
+
+    loadAll().catch(err => {
+      $("logs").textContent = "加载失败: " + err;
+    });
+  </script>
+</body>
+</html>

@@ -301,6 +301,13 @@ func Load(path string) (*Config, error) {
 	if cfg.DataDir == "" {
 		cfg.DataDir = "./data"
 	}
+	// 出站代理：生图访问 chatgpt.com 需非 CN 出口，否则直连被拒。
+	// 支持 socks5://（tls-client 透传），优先级高于 config.json 中的 proxy。
+	if v := os.Getenv("CHATGPT2API_PROXY"); v != "" {
+		cfg.Proxy = v
+		cfg.ProxyRuntime.Enabled = true
+		cfg.ProxyRuntime.ProxyURL = v
+	}
 	// Scheduler env overrides 对齐 abai .env.example
 	if v := os.Getenv("DAILY_401_CHECK_ENABLED"); v != "" {
 		cfg.Scheduler.Enabled = v != "0" && v != "false" && v != "no" && v != "off"

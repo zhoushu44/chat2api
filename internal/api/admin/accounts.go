@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -142,16 +144,106 @@ func (h *AccountsHandler) Check(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true, "message": "check queued"})
 }
 
+// Create 兼容两种请求：
+//  1. 单账号：{"token": "...", "email": "..."}（旧用法，原样响应账号对象）
+//  2. 批量导入：{"tokens": [...], "accounts": [{access_token, email, type, source_type}]}
+//     返回 {added, skipped, refreshed, errors}，供 RegiForge auto-import 与前端批量导入使用。
 func (h *AccountsHandler) Create(c *gin.Context) {
-	var a account.Account
-	if err := c.ShouldBindJSON(&a); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
+	raw, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	var probe struct {
+		Tokens   []string `json:"tokens"`
+		Accounts []any    `json:"accounts"`
+	}
+	if json.Unmarshal(raw, &probe) == nil && (len(probe.Tokens) > 0 || len(probe.Accounts) > 0) {
+		h.batchCreate(c, raw)
+		return
+	}
+	var single account.Account
+	if err := json.Unmarshal(raw, &single); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
 	if h.Accounts != nil {
-		_ = h.Accounts.Add(&a)
+		_ = h.Accounts.Add(&single)
 	}
 	if h.Pool != nil {
-		h.Pool.Add(&a)
+		h.Pool.Add(&single)
 	}
-	c.JSON(http.StatusOK, a)
+	c.JSON(http.StatusOK, single)
+}
+
+// batchCreate 处理批量导入：{accounts: [{access_token, email, type, source_type}]}
+// 或 {tokens: ["sk-..."]}。重复 token 跳过并计数。
+func (h *AccountsHandler) batchCreate(c *gin.Context, raw []byte) {
+	var batch struct {
+		Tokens   []string         `json:"tokens"`
+		Accounts []map[string]any `json:"accounts"`
+	}
+	if err := json.Unmarshal(raw, &batch); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	added, skipped, refreshed := 0, 0, 0
+	var errors []map[string]any
+
+	// accounts 字段名兼容 access_token/token
+	field := func(m map[string]any, keys ...string) string {
+		for _, k := range keys {
+			if s, ok := m[k].(string); ok {
+				return s
+			}
+		}
+		return ""
+	}
+
+	addOne := func(token, email, typ, sourceType string) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			skipped++
+			return
+		}
+		a := &account.Account{
+			Token:      token,
+			Email:      email,
+			Type:       account.NormalizeAccountType(typ),
+			SourceType: account.NormalizeSourceType(sourceType),
+			// 注册/导入的 token 刚获取即可用；未检测前避免被 Pool.Available() 判为不可用
+			Status: account.StatusNormal,
+		}
+		if h.Accounts != nil {
+			if err := h.Accounts.Add(a); err != nil {
+				errors = append(errors, map[string]any{"token": token[:8], "error": err.Error()})
+				return
+			}
+		}
+		if h.Pool != nil {
+			h.Pool.Add(a)
+		}
+		added++
+	}
+
+	for _, tok := range batch.Tokens {
+		addOne(tok, "", "Plus", "web")
+	}
+	for _, m := range batch.Accounts {
+		typ := field(m, "type")
+		if typ == "" {
+			typ = "Plus"
+		}
+		src := field(m, "source_type")
+		if src == "" {
+			src = "web"
+		}
+		addOne(field(m, "access_token", "token"), field(m, "email"), typ, src)
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"added": added, "skipped": skipped, "refreshed": refreshed,
+		"errors": errors,
+	})
 }
 func (h *AccountsHandler) Update(c *gin.Context) {
 	id := c.Param("id")

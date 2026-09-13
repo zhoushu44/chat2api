@@ -1,0 +1,98 @@
+{
+  "version": 1,
+  "project_id": "grok_register",
+  "summary": "注册 xAI/Grok：HTTP 协议注册（curl_cffi + YesCaptcha + TempMail），产出 SSO",
+  "required_captcha_types": ["turnstile"],
+  "allowed_captcha_ids": ["turnstile.yescaptcha"],
+  "allowed_email_ids": [],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "lite HTTP 协议流程不启动注册浏览器"
+  },
+  "fields": [
+    {
+      "key": "mail_timeout",
+      "label": "邮箱验证码超时（秒）",
+      "type": "number",
+      "config_path": "projects.grok_register.mail_timeout",
+      "default": 180,
+      "min": 30,
+      "max": 600
+    },
+    {
+      "key": "turnstile_timeout",
+      "label": "Turnstile 超时（秒）",
+      "type": "number",
+      "config_path": "projects.grok_register.turnstile_timeout",
+      "default": 180,
+      "min": 30,
+      "max": 600,
+      "help": "YesCaptcha 解 Turnstile 的最长等待时间。"
+    },
+    {
+      "key": "user_agent",
+      "label": "User-Agent（可选）",
+      "type": "text",
+      "config_path": "projects.grok_register.user_agent",
+      "default": "",
+      "help": "留空用默认 Chrome 145 UA。"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step01",
+      "title": "Bootstrap 注册页",
+      "file": "steps/_lite_engine.py",
+      "desc": "curl_cffi 获取注册页元数据 + sitekey + next-action"
+    },
+    {
+      "id": "step02",
+      "title": "创建邮箱 + 发送验证码",
+      "file": "steps/_lite_engine.py",
+      "desc": "ctx.email 生成地址 + gRPC CreateEmailValidationCode"
+    },
+    {
+      "id": "step03",
+      "title": "等待 + 校验验证码",
+      "file": "steps/_lite_engine.py",
+      "desc": "ctx.email.wait_code + gRPC VerifyEmailValidationCode"
+    },
+    {
+      "id": "step04",
+      "title": "Turnstile + 建号",
+      "file": "steps/_lite_engine.py",
+      "desc": "ctx.captcha 解 Turnstile + Server Action create_account"
+    },
+    {
+      "id": "step05",
+      "title": "提取 SSO",
+      "file": "steps/_lite_engine.py",
+      "desc": "RSC body → set-cookie 链 → sso JWT"
+    }
+  ],
+  "output": {
+    "format": "email|sso",
+    "path_hint": "data/keys/grok_register/"
+  },
+  "account_columns": [
+    {"key": "email", "label": "Email"},
+    {"key": "extra.provider", "label": "Provider"},
+    {"key": "extra.authType", "label": "Auth Type"},
+    {"key": "extra.webTier", "label": "Web Tier"},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ],
+  "import": {
+    "exporter_id": "grok2api",
+    "label": "导入到 Grok2API",
+    "confirm_hint": "将把当前产出的 SSO 导入到 Grok2API 服务",
+    "confirm_warning": "成功导入的账号将从最近产出中删除"
+  }
+}

@@ -1,0 +1,62 @@
+# 单镜像：chatgpt2api(Go) + regiforge(Python/Chrome) 合为一体。
+# 一个容器即可完整运行，本地/线上一致：docker run -p 3077:3077 ...
+#
+# 架构：
+#   - Go 主服务监听 0.0.0.0:3077（对外）
+#   - regiforge 监听 127.0.0.1:8787（仅容器内，Go 通过 127.0.0.1 访问）
+#   - 由 /entrypoint.sh 同时拉起两个进程
+
+# ---------- stage 1: 编译 Go 主服务 ----------
+FROM golang:1.26-alpine AS go-builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# 前端产物已由 web-vue 构建并同步至 internal/api/web_dist（Go embed 读取该目录）
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /chatgpt2api-go ./cmd/server
+
+# ---------- stage 2: 运行时（Python + Chrome + Go 二进制） ----------
+FROM python:3.11-slim-bookworm
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DISPLAY=:99 \
+    OPENAI_SENTINEL_NODE_PATH=/usr/bin/node \
+    STORAGE_BACKEND=json
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates curl gnupg nodejs xauth xvfb supervisor \
+       fonts-liberation fonts-noto-cjk \
+    && mkdir -p /etc/apt/keyrings \
+    && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
+    && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+# regiforge 依赖与源码
+WORKDIR /opt/regiforge
+COPY regiforge/requirements.txt .
+RUN pip install --upgrade pip && pip install -r requirements.txt
+COPY regiforge/ .
+
+# Go 主服务二进制
+COPY --from=go-builder /chatgpt2api-go /chatgpt2api-go
+
+# 进程编排与入口
+COPY deploy/single/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY deploy/single/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && mkdir -p /opt/regiforge/data /data
+
+EXPOSE 3077 6060
+VOLUME ["/data"]
+
+# 默认指向容器内 regiforge（可用环境变量覆盖为外部地址）
+ENV REGIFORGE_BASE_URL=http://127.0.0.1:8787 \
+    REGIFORGE_PROJECT_ID=chatgpt_register \
+    REGIFORGE_PROXY_ID=wary \
+    REGIFORGE_EMAIL_ID=mailnest
+
+ENTRYPOINT ["/entrypoint.sh"]

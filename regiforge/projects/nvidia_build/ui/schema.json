@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "project_id": "nvidia_build",
+  "summary": "批量注册 NVIDIA Build，获取 AI Playground API Key（nvapi-）",
+  "required_captcha_types": ["hcaptcha"],
+  "allowed_email_ids": ["mailnest"],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 5,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "正式页面流程固定使用有头浏览器"
+  },
+  "fields": [
+    {
+      "key": "register_mode",
+      "label": "注册模式",
+      "type": "select",
+      "config_path": "projects.nvidia_build.register_mode",
+      "default": "browser",
+      "options": [
+        { "value": "browser", "label": "browser — 有头浏览器（Playwright，稳定）" },
+        { "value": "http", "label": "http — curl_cffi 协议（快速，需调试）" }
+      ],
+      "help": "browser 模式使用真实浏览器；http 模式使用 curl_cffi 模拟（需 pip install curl_cffi）"
+    },
+    {
+      "key": "password",
+      "label": "注册密码",
+      "type": "password",
+      "config_path": "projects.nvidia_build.password",
+      "default": "",
+      "placeholder": "账户密码",
+      "help": "写入 data/config.json → projects.nvidia_build.password"
+    },
+    {
+      "key": "browser_backend",
+      "label": "浏览器底座",
+      "type": "select",
+      "config_path": "projects.nvidia_build.browser_backend",
+      "default": "playwright",
+      "options": [
+        { "value": "", "label": "跟随全局 browser.backend（默认 playwright）" },
+        { "value": "playwright", "label": "playwright — 原版 Playwright" },
+        { "value": "patchright", "label": "patchright — CDP 修补（免费，pip install patchright）" }
+      ],
+      "help": "可随时在 playwright / patchright 间切换。patchright 需先 pip install patchright。",
+      "visible_when": { "field_key": "register_mode", "eq": "browser" }
+    },
+    {
+      "key": "browser_channel",
+      "label": "浏览器 Channel",
+      "type": "text",
+      "config_path": "projects.nvidia_build.browser_channel",
+      "default": "chrome",
+      "placeholder": "chrome",
+      "help": "默认复用系统 Chrome",
+      "visible_when": { "field_key": "register_mode", "eq": "browser" }
+    },
+    {
+      "key": "mail_timeout",
+      "label": "邮箱验证码超时（秒）",
+      "type": "number",
+      "config_path": "projects.nvidia_build.mail_timeout",
+      "default": 120,
+      "help": "等待邮箱验证码的最大超时时间",
+      "visible_when": { "field_key": "register_mode", "in": ["http", "browser"] }
+    },
+    {
+      "key": "captcha_timeout",
+      "label": "验证码解题超时（秒）",
+      "type": "number",
+      "config_path": "projects.nvidia_build.captcha_timeout",
+      "default": 180,
+      "help": "hCaptcha 解题的最大超时时间（仅 http 模式）",
+      "visible_when": { "field_key": "register_mode", "eq": "http" }
+    }
+  ],
+  "steps": [
+    {
+      "id": "step01",
+      "title": "打开 Signin",
+      "file": "steps/step01_open_signin.py",
+      "desc": "打开 build.nvidia.com/?modal=signin，等待邮箱框（含重载重试）"
+    },
+    {
+      "id": "step02",
+      "title": "Cookie",
+      "file": "steps/step02_accept_cookies.py",
+      "desc": "Accept All / 关闭 OneTrust 弹窗"
+    },
+    {
+      "id": "step03",
+      "title": "邮箱 → 注册表单",
+      "file": "steps/step03_email_next.py",
+      "desc": "填邮箱 → Next → 进入 NVGS create-account"
+    },
+    {
+      "id": "step06",
+      "title": "密码",
+      "file": "steps/step06_input_password.py",
+      "desc": "填写注册密码"
+    },
+    {
+      "id": "step07",
+      "title": "确认密码",
+      "file": "steps/step07_confirm_password.py",
+      "desc": "确认密码一致"
+    },
+    {
+      "id": "step08",
+      "title": "同意条款",
+      "file": "steps/step08_check_agreement.py",
+      "desc": "勾选协议"
+    },
+    {
+      "id": "step09",
+      "title": "验证码",
+      "file": "steps/step09_solve_captcha.py",
+      "desc": "提取 sitekey，由 ctx.captcha（如 CaptchaRun）解题"
+    },
+    {
+      "id": "step10",
+      "title": "注入 Token",
+      "file": "steps/step10_inject_token.py",
+      "desc": "将 hCaptcha token 注入页面"
+    },
+    {
+      "id": "step11",
+      "title": "创建账户",
+      "file": "steps/step11_create_account.py",
+      "desc": "点击注册按钮"
+    },
+    {
+      "id": "step12",
+      "title": "邮箱验证",
+      "file": "steps/step12_verify_email.py",
+      "desc": "ctx.email 收码并提交 OTP"
+    },
+    {
+      "id": "step13",
+      "title": "获取 API Key",
+      "file": "steps/step13_fetch_apikey.py",
+      "desc": "Consent / 登录 / select-account / NGC 取 nvapi- Key"
+    }
+  ],
+  "output": {
+    "title": "最近产出 API Key",
+    "line_format": "email|nvapi-...",
+    "preview_limit": 50,
+    "empty_hint": "跑通后写入 data/keys/nvidia_build/api_keys.txt；可在控制台「导出 / 导入账号池」导出"
+  },
+  "account_columns": [
+    {"key": "email", "label": "Email"},
+    {"key": "apikey", "label": "API Key", "preview": 20},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ],
+  "help_file": "help.md",
+  "notes": [
+    "验证码/邮箱/代理走共用 Provider，不在本项目写死服务商",
+    "步骤细节与选择器见 STEPS.md",
+    "建议先 total=1、有头模式调试",
+    "并发建议 4~8，启动间隔 3~5s 可降低 step03 弹窗竞争重试率",
+    "导出用全局 export/*：file / sub2api / grok2api，控制台左侧选择后填参数"
+  ]
+}

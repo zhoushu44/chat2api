@@ -1,0 +1,482 @@
+from __future__ import annotations
+
+import asyncio
+import datetime
+import json
+import time
+import uuid
+from collections import defaultdict, deque
+from typing import Any
+
+from .base import RunContext
+from .config_store import load_config, provider_config
+from .models import AccountResult, TaskConfig, TaskStatus
+from .paths import project_accounts_file, project_keys_file
+from .project_ui import load_project_ui
+from .registry import get_registry
+
+# 任务运行期间每隔多少秒自动把已成功的账号导入账号池（import.auto=true 时生效）
+_IMPORT_INTERVAL_SECONDS = 60
+
+
+class TaskRunner:
+    def __init__(self) -> None:
+        self._tasks: dict[str, TaskStatus] = {}
+        self._configs: dict[str, TaskConfig] = {}
+        self._logs: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=2000))
+        self._stop_flags: dict[str, asyncio.Event] = {}
+        self._workers: dict[str, asyncio.Task] = {}
+        self._lock = asyncio.Lock()
+
+    def list_tasks(self) -> list[dict[str, Any]]:
+        return [t.to_dict() for t in sorted(self._tasks.values(), key=lambda x: x.created_at, reverse=True)]
+
+    def get_task(self, task_id: str) -> TaskStatus | None:
+        return self._tasks.get(task_id)
+
+    def get_logs(self, task_id: str, offset: int = 0) -> dict[str, Any]:
+        logs = list(self._logs.get(task_id, []))
+        return {"offset": offset, "total": len(logs), "lines": logs[offset:]}
+
+    async def start(self, config: TaskConfig) -> TaskStatus:
+        task_id = uuid.uuid4().hex[:12]
+        now = time.time()
+        status = TaskStatus(
+            task_id=task_id,
+            state="pending",
+            total=config.total,
+            project_id=config.project_id,
+            created_at=now,
+            updated_at=now,
+            message="任务已创建",
+        )
+        self._tasks[task_id] = status
+        self._configs[task_id] = config
+        self._stop_flags[task_id] = asyncio.Event()
+        self._log(task_id, f"创建任务 project={config.project_id} total={config.total} concurrency={config.concurrency}")
+
+        worker = asyncio.create_task(self._run_task(task_id), name=f"task-{task_id}")
+        self._workers[task_id] = worker
+        return status
+
+    async def stop(self, task_id: str) -> TaskStatus:
+        status = self._tasks.get(task_id)
+        if not status:
+            raise KeyError(f"任务不存在: {task_id}")
+        flag = self._stop_flags.get(task_id)
+        if flag:
+            flag.set()
+        if status.state == "running":
+            status.state = "stopping"
+            status.message = "正在停止..."
+            status.updated_at = time.time()
+            self._log(task_id, "收到停止请求")
+        return status
+
+    def _log(self, task_id: str, msg: str) -> None:
+        line = f"{time.strftime('%H:%M:%S')} {msg}"
+        self._logs[task_id].append(line)
+        status = self._tasks.get(task_id)
+        if status:
+            status.updated_at = time.time()
+        try:
+            print(f"[task:{task_id}] {msg}")
+        except OSError:
+            # 后台启动时 stdout 句柄可能失效，不能让控制台输出破坏任务状态统计
+            pass
+
+    def _lowlevel_save_key(
+        self,
+        keys_file,
+        accounts_file,
+        email: str,
+        apikey: str,
+        extra: dict | None,
+        task_id: str,
+        idx: int,
+    ) -> bool:
+        """低层 IO 保存 key（绕过 asyncio fd 表损坏）。成功返回 True。
+
+        浏览器关闭后 asyncio 偶发 [Errno 9] Bad file descriptor，导致 open() 和
+        async with lock 都可能失败。此方法用 os.open/os.write 直接写，不依赖
+        asyncio 事件循环的 fd 表。
+        """
+        try:
+            import os as _os
+            _line = f"{email}|{apikey}\n".encode("utf-8")
+            _fd = _os.open(str(keys_file), _os.O_WRONLY | _os.O_APPEND | _os.O_CREAT, 0o644)
+            try:
+                _os.write(_fd, _line)
+            finally:
+                _os.close(_fd)
+            _jsonl = (
+                json.dumps(
+                    {
+                        "email": email,
+                        "apikey": apikey,
+                        "registered_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                        "extra": extra or {},
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            ).encode("utf-8")
+            _fd = _os.open(str(accounts_file), _os.O_WRONLY | _os.O_APPEND | _os.O_CREAT, 0o644)
+            try:
+                _os.write(_fd, _jsonl)
+            finally:
+                _os.close(_fd)
+            self._log(task_id, f"[{idx}] ✅ 低层 IO 保存成功 -> {keys_file}")
+            return True
+        except Exception as retry_err:
+            self._log(
+                task_id,
+                f"[{idx}] ❌ 低层 IO 也失败: {retry_err}，key={email}|{apikey}",
+            )
+            return False
+
+    async def _run_task(self, task_id: str) -> None:
+        status = self._tasks[task_id]
+        config = self._configs[task_id]
+        stop_flag = self._stop_flags[task_id]
+        registry = get_registry()
+        app_config = load_config()
+
+        try:
+            project = registry.get_project(config.project_id)
+            captcha = registry.get_captcha(config.captcha_id) if config.captcha_id else None
+            email = registry.get_email(config.email_id) if config.email_id else None
+            proxy = registry.get_proxy(config.proxy_id)
+            sms = registry.get_sms(config.sms_id) if config.sms_id else None
+
+            captcha_cfg = dict(provider_config(app_config, "captcha", config.captcha_id)) if captcha else {}
+            email_cfg = dict(provider_config(app_config, "email", config.email_id)) if email else {}
+            # MailNest 等按注册项目区分 product_code；注入当前项目 id
+            if email:
+                email_cfg["registration_project_id"] = config.project_id
+            # 邮箱与验证码服务统一使用当前任务代理
+            # 以下邮箱 Provider 为直连公网 API，走代理反而会失败，保持直连
+            _email_direct = {"mailnest", "tempmail", "cloudflare_worker"}
+            proxy_cfg = provider_config(app_config, "proxy", config.proxy_id)
+            if proxy_cfg and proxy_cfg.get("server"):
+                proxy_server = str(proxy_cfg["server"]).splitlines()[0].strip()
+                if email and config.email_id not in _email_direct:
+                    email_cfg["proxy"] = proxy_server
+                if captcha:
+                    captcha_cfg["proxy"] = proxy_server
+            if captcha:
+                captcha.configure(captcha_cfg)
+            if email:
+                email.configure(email_cfg)
+            proxy.configure(proxy_cfg)
+            if sms is not None:
+                sms_cfg = dict(provider_config(app_config, "sms", config.sms_id))
+                # 短信服务使用当前任务代理
+                if proxy_cfg and proxy_cfg.get("server"):
+                    proxy_server = str(proxy_cfg["server"]).splitlines()[0].strip()
+                    sms_cfg["proxy"] = proxy_server
+                sms.configure(sms_cfg)
+            
+            # 重置代理池状态（避免上次任务的失败代理影响本次任务）
+            server_config = str(proxy_cfg.get("server") or "").strip()
+            proxy_lines = [line.strip() for line in server_config.split("\n") if line.strip()]
+            if hasattr(proxy, "_proxy_pool"):
+                proxy._proxy_pool = proxy_lines
+                proxy._proxy_index = 0
+                if hasattr(proxy, "_failed_proxies"):
+                    proxy._failed_proxies.clear()
+
+            status.state = "running"
+            status.message = "运行中"
+            status.updated_at = time.time()
+            mailnest_code = ""
+            if email and config.email_id == "mailnest" and hasattr(email, "_project_code"):
+                try:
+                    mailnest_code = str(email._project_code() or "")
+                except Exception:
+                    mailnest_code = ""
+            extra = f" mailnest_code={mailnest_code}" if mailnest_code else ""
+            self._log(
+                task_id,
+                f"开始运行 captcha={config.captcha_id} email={config.email_id} sms={config.sms_id} proxy={config.proxy_id}{extra}",
+            )
+
+            sem = asyncio.Semaphore(config.concurrency)
+            file_lock = asyncio.Lock()
+            end = config.start + config.total - 1
+            active_accounts = 0
+
+            # 运行期自动导入：任务进行中每 60s 把新成功的账号推入账号池（import.auto=true 时）
+            import_auto = False
+            try:
+                import_auto = bool((load_project_ui(config.project_id).get("import") or {}).get("auto"))
+            except Exception:
+                import_auto = False
+            pending_ok: deque = deque()
+
+            async def run_one(idx: int) -> AccountResult:
+                if stop_flag.is_set():
+                    return AccountResult(status="stopped")
+                if config.stagger > 0 and idx > config.start:
+                    # 按并发槽位取模，而非累计：第 100 个账号不再等 495s，
+                    # 只在当前并发窗口内错开 stagger 秒。
+                    delay = ((idx - config.start) % config.concurrency) * config.stagger
+                    if delay > 0:
+                        self._log(task_id, f"[{idx}] 错开启动，等待 {delay}s")
+                        await asyncio.sleep(delay)
+                if stop_flag.is_set():
+                    return AccountResult(status="stopped")
+
+                async with sem:
+                    if stop_flag.is_set():
+                        return AccountResult(status="stopped")
+
+                    nonlocal active_accounts
+                    active_accounts += 1
+                    started_at = time.perf_counter()
+                    self._log(
+                        task_id,
+                        f"[{idx}] DEBUG account_enter active={active_accounts}/{config.concurrency}",
+                    )
+
+                    def logger(msg: str) -> None:
+                        self._log(task_id, msg)
+
+                    ctx = RunContext(
+                        task_id=task_id,
+                        index=idx,
+                        total=end,
+                        captcha=captcha,
+                        email=email,
+                        proxy=proxy,
+                        sms=sms,
+                        config=app_config,
+                        headless=config.headless,
+                        logger=logger,
+                    )
+                    try:
+                        result = await project.run_one(ctx)
+                    except Exception as exc:
+                        result = AccountResult(status=f"exception: {exc}")
+                        self._log(task_id, f"[{idx}] 异常：{exc}")
+                    finally:
+                        active_accounts -= 1
+                        self._log(
+                            task_id,
+                            f"[{idx}] DEBUG account_exit active={active_accounts} elapsed={time.perf_counter() - started_at:.3f}s",
+                        )
+
+                    # 多代理模式下，根据结果标记代理健康状态
+                    if hasattr(proxy, "_failed_proxies") and hasattr(proxy, "_proxy_pool") and proxy._proxy_pool:
+                        # 计算当前使用的代理索引
+                        current_idx = (proxy._proxy_index - 1) % len(proxy._proxy_pool) if proxy._proxy_index > 0 else 0
+                        current_proxy = proxy._proxy_pool[current_idx] if current_idx < len(proxy._proxy_pool) else None
+                        if current_proxy:
+                            if result.apikey:
+                                proxy._failed_proxies.discard(current_proxy)  # type: ignore
+                            elif result.failure_class in {"proxy_dead", "proxy_reset", "tls_error", "exception"}:
+                                # 单代理池：标记失败会导致后续任务直连（更糟），保持不变让代理恢复
+                                if len(proxy._proxy_pool) > 1:
+                                    proxy._failed_proxies.add(current_proxy)  # type: ignore
+                                    self._log(task_id, f"[{idx}] 代理 {current_proxy} 标记为失败，自动切换到下一个")
+                                else:
+                                    self._log(task_id, f"[{idx}] 代理失败但池中仅一个，保持不变（避免直连）")
+
+                    # 先算好文件路径（锁失败时也要用）
+                    output_dir = app_config.get("ui", {}).get("keys_output_dir", "")
+                    keys_file = project_keys_file(config.project_id, output_dir)
+                    accounts_file = project_accounts_file(config.project_id, output_dir)
+                    # file_lock 获取本身偶发 OSError（浏览器关闭后 Bad file descriptor），
+                    # 必须外层兜底：锁失败也要用低层 IO 把 key 落盘，绝不能丢。
+                    try:
+                        async with file_lock:
+                            if result.apikey:
+                                try:
+                                    with open(keys_file, "a", encoding="utf-8") as f:
+                                        f.write(f"{result.email}|{result.apikey}\n")
+                                    with open(accounts_file, "a", encoding="utf-8") as f:
+                                        f.write(json.dumps({
+                                            "email": result.email,
+                                            "apikey": result.apikey,
+                                            "registered_at": datetime.datetime.now(datetime.UTC).isoformat(),
+                                            "extra": result.extra or {},
+                                        }, ensure_ascii=False) + "\n")
+                                    self._log(task_id, f"[{idx}] 已保存 Key -> {keys_file}")
+                                except OSError as write_err:
+                                    # open() 失败（Bad file descriptor）：低层 IO 重试
+                                    self._log(
+                                        task_id,
+                                        f"[{idx}] ⚠️ 写文件异常 {write_err}，完整 key={result.email}|{result.apikey}",
+                                    )
+                                    self._lowlevel_save_key(
+                                        keys_file, accounts_file,
+                                        result.email, result.apikey, result.extra,
+                                        task_id, idx,
+                                    )
+                    except Exception as lock_err:
+                        # async with file_lock 本身抛 OSError：直接低层 IO 抢救
+                        if result.apikey:
+                            self._log(
+                                task_id,
+                                f"[{idx}] ⚠️ file_lock 异常 {lock_err}，低层 IO 抢救，完整 key={result.email}|{result.apikey}",
+                            )
+                            self._lowlevel_save_key(
+                                keys_file, accounts_file,
+                                result.email, result.apikey, result.extra,
+                                task_id, idx,
+                            )
+
+                    # self._lock 获取同样可能抛 Bad file descriptor：外层兜底，
+                    # 失败时直接更新计数（事件循环单线程，无锁赋值安全）。
+                    try:
+                        async with self._lock:
+                            status.done += 1
+                            if result.apikey:
+                                status.ok += 1
+                                if import_auto:
+                                    pending_ok.append(result)
+                                self._log(
+                                    task_id,
+                                    f"[{idx}] 成功 key={(result.apikey or '')[:24]}... "
+                                    f"累计 {status.ok}/{status.done}",
+                                )
+                            else:
+                                status.failed += 1
+                                detail_parts = [f"status={result.status}"]
+                                if result.failed_step:
+                                    detail_parts.append(f"step={result.failed_step}")
+                                if result.failure_class:
+                                    detail_parts.append(f"class={result.failure_class}")
+                                if result.last_url:
+                                    detail_parts.append(f"url={result.last_url[:120]}")
+                                if result.error:
+                                    detail_parts.append(f"err={result.error[:200]}")
+                                if result.evidence_dir:
+                                    detail_parts.append(f"evidence={result.evidence_dir}")
+                                self._log(
+                                    task_id,
+                                    f"[{idx}] 失败 {' '.join(detail_parts)} "
+                                    f"累计失败 {status.failed}/{status.done}",
+                                )
+                            status.updated_at = time.time()
+                    except Exception as status_lock_err:
+                        status.done += 1
+                        if result.apikey:
+                            status.ok += 1
+                        else:
+                            status.failed += 1
+                        status.updated_at = time.time()
+                        self._log(
+                            task_id,
+                            f"[{idx}] ⚠️ self._lock 异常 {status_lock_err}，已直接更新计数 ok={status.ok} failed={status.failed}",
+                        )
+                    return result
+
+            tasks = [asyncio.create_task(run_one(idx)) for idx in range(config.start, end + 1)]
+            # return_exceptions=True：单任务异常（如 [Errno 9]）不崩溃整个 runner
+            import_loop = (
+                asyncio.create_task(self._periodic_import(task_id, config, registry, app_config, pending_ok))
+                if import_auto
+                else None
+            )
+            gather_results = await asyncio.gather(*tasks, return_exceptions=True)
+            for i, r in enumerate(gather_results):
+                if isinstance(r, Exception):
+                    idx = config.start + i
+                    self._log(task_id, f"[{idx}] 未捕获异常: {r}")
+                    async with self._lock:
+                        status.done += 1
+                        status.failed += 1
+                        status.updated_at = time.time()
+
+            if stop_flag.is_set():
+                status.state = "stopped"
+                status.message = f"已停止，成功 {status.ok}/{status.done}"
+            else:
+                status.state = "done"
+                status.message = f"完成，成功 {status.ok}/{status.total}"
+            status.updated_at = time.time()
+            self._log(task_id, status.message)
+            # 任务完成：停掉周期导入，收尾把剩余成功账号自动导入账号池（如 chatgpt2api）
+            if import_loop is not None:
+                import_loop.cancel()
+                try:
+                    await import_loop
+                except asyncio.CancelledError:
+                    pass
+            await self._flush_pending_import(task_id, config, registry, app_config, pending_ok)
+        except Exception as exc:
+            status.state = "failed"
+            status.message = str(exc)
+            status.updated_at = time.time()
+            self._log(task_id, f"任务失败: {exc}")
+        finally:
+            self._workers.pop(task_id, None)
+
+    async def _periodic_import(
+        self,
+        task_id: str,
+        config: TaskConfig,
+        registry,
+        app_config: dict,
+        pending: deque,
+    ) -> None:
+        """任务运行期间周期导入：每 _IMPORT_INTERVAL_SECONDS 秒把新成功账号推入账号池。"""
+        try:
+            while True:
+                await asyncio.sleep(_IMPORT_INTERVAL_SECONDS)
+                status = self._tasks.get(task_id)
+                if status and status.state not in {"running", "stopping"}:
+                    return  # 收尾由主流程负责
+                if pending:
+                    await self._flush_pending_import(task_id, config, registry, app_config, pending)
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            self._log(task_id, f"[auto-import] 周期导入异常: {exc}")
+
+    async def _flush_pending_import(
+        self,
+        task_id: str,
+        config: TaskConfig,
+        registry,
+        app_config: dict,
+        pending: deque,
+    ) -> None:
+        """把队列中的成功账号自动导入导出服务（默认 chatgpt2api）。
+
+        仅导入本次任务新产出的成功账号；不清理 keys 文件，保留本地产出记录。
+        导出服务按 token 去重/刷新，任务运行期分批发多次调用是安全的。
+        """
+        try:
+            ui = load_project_ui(config.project_id)
+            import_cfg = ui.get("import") or {}
+            if not import_cfg.get("auto"):
+                pending.clear()
+                return
+            exporter_id = str(import_cfg.get("exporter_id") or "").strip()
+            if not exporter_id:
+                pending.clear()
+                return
+            batch = []
+            while pending:
+                batch.append(pending.popleft())
+            if not batch:
+                return
+            exporter = registry.get_exporter(exporter_id)
+            exporter_cfg = dict(provider_config(app_config, "export", exporter_id))
+            exporter_cfg["project_id"] = config.project_id
+            exporter.configure(exporter_cfg)
+            result = await exporter.export(batch)
+            self._log(task_id, f"[auto-import] 自动导入 {exporter_id}：{result.detail}")
+            if result.status in {"failed", "rejected"}:
+                self._log(task_id, f"[auto-import] ⚠️ 导入未完全成功 status={result.status}")
+        except Exception as exc:
+            self._log(task_id, f"[auto-import] 自动导入异常: {exc}")
+
+
+_RUNNER = TaskRunner()
+
+
+def get_runner() -> TaskRunner:
+    return _RUNNER

@@ -115,6 +115,27 @@
               </label>
 
               <label class="register-field">
+                <span class="register-label">连续失败自动停止</span>
+                <Checkbox
+                  :model-value="!!registerConfig.max_fail_enabled"
+                  :disabled="registerConfig.enabled"
+                  @update:model-value="registerConfig.max_fail_enabled = !!$event"
+                />
+              </label>
+
+              <label class="register-field">
+                <span class="register-label">连续失败上限（次）</span>
+                <Input
+                  v-model.number="registerConfig.max_fail_rounds"
+                  type="number"
+                  min="1"
+                  max="1000"
+                  block
+                  :disabled="registerConfig.enabled || !registerConfig.max_fail_enabled"
+                />
+              </label>
+
+              <label class="register-field">
                 <span class="register-label">注册代理</span>
                 <GroupedSelectMenu
                   :model-value="registerProxyMode"
@@ -978,6 +999,8 @@ const defaultRegisterConfig: LegacyRegisterConfig = {
   check_interval: 5,
   auto_refill: false,
   auto_refill_interval: 300,
+  max_fail_enabled: false,
+  max_fail_rounds: 10,
   enabled: false,
   stats: {
     success: 0,
@@ -1141,6 +1164,8 @@ function normalizeRegisterConfig(raw: LegacyRegisterConfig): LegacyRegisterConfi
     ...raw,
     auto_refill: !!raw.auto_refill,
     auto_refill_interval: Math.min(3600, Math.max(30, Number(raw.auto_refill_interval) || 300)),
+    max_fail_enabled: !!raw.max_fail_enabled,
+    max_fail_rounds: Math.min(1000, Math.max(1, Number(raw.max_fail_rounds) || 10)),
     mail,
     stats: { ...defaultRegisterConfig.stats, ...(raw.stats || {}) },
     logs: Array.isArray(raw.logs) ? raw.logs : [],
@@ -1617,6 +1642,8 @@ function legacyPayload(): Partial<LegacyRegisterConfig> {
     check_interval: Math.max(1, Number(registerConfig.value.check_interval) || 5),
     auto_refill: !!registerConfig.value.auto_refill,
     auto_refill_interval: Math.min(3600, Math.max(30, Number(registerConfig.value.auto_refill_interval) || 300)),
+    max_fail_enabled: !!registerConfig.value.max_fail_enabled,
+    max_fail_rounds: Math.min(1000, Math.max(1, Number(registerConfig.value.max_fail_rounds) || 10)),
   }
 }
 

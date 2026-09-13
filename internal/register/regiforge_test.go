@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 )
@@ -151,6 +152,8 @@ func TestPoll_MapsProgress(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tasks":
 			_, _ = w.Write([]byte(`{"task_id":"task-p"}`))
+		case "/api/config":
+			_, _ = w.Write([]byte(`{}`))
 		case "/api/tasks/task-p":
 			_, _ = w.Write([]byte(`{"done":3,"ok":2,"failed":1,"total":3,"state":"done"}`))
 		case "/api/tasks/task-p/logs":
@@ -202,6 +205,8 @@ func TestMaybeContinue(t *testing.T) {
 		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
 			creates++
 			_, _ = w.Write([]byte(`{"task_id":"task-c"}`))
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/api/tasks/task-c/logs":
 			_, _ = w.Write([]byte(`{"lines":[]}`))
 		case r.URL.Path == "/api/tasks/task-c":
@@ -243,6 +248,8 @@ func TestRefillCheck(t *testing.T) {
 			case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
 				creates++
 				_, _ = w.Write([]byte(`{"task_id":"task-r"}`))
+			case r.URL.Path == "/api/config":
+				_, _ = w.Write([]byte(`{}`))
 			case r.URL.Path == "/api/tasks/task-r/logs":
 				_, _ = w.Write([]byte(`{"lines":[]}`))
 			case r.URL.Path == "/api/tasks/task-r":
@@ -299,6 +306,8 @@ func TestStop_Reset(t *testing.T) {
 		switch {
 		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
 			_, _ = w.Write([]byte(`{"task_id":"task-s"}`))
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
 		case r.URL.Path == "/api/tasks/task-s/stop" && r.Method == http.MethodPost:
 			stops = append(stops, "task-s")
 			_, _ = w.Write([]byte(`{}`))
@@ -330,5 +339,225 @@ func TestStop_Reset(t *testing.T) {
 	cfg := s.GetConfig()
 	if cfg.Enabled || cfg.Stats.TaskID != "" || cfg.Stats.Running != 0 {
 		t.Fatalf("should be cleared after Reset: %+v", cfg.Stats)
+	}
+}
+
+// waitRunning 等待轮询 goroutine 因 Enabled=false 退出（sleep 一个轮询周期）。
+func waitRunning(t *testing.T, s *Service) {
+	t.Helper()
+	s.mu.RLock()
+	interval := s.cfg.CheckInterval
+	s.mu.RUnlock()
+	if interval <= 0 {
+		interval = 1
+	}
+	time.Sleep(time.Duration(interval+1) * time.Second)
+}
+
+// TestStop_DisablesAutoRefill 停止应一并关闭自动注册，避免巡检重新拉起任务。
+func TestStop_DisablesAutoRefill(t *testing.T) {
+	s := NewWithDir(t.TempDir())
+	var creates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
+			creates++
+			_, _ = w.Write([]byte(`{"task_id":"task-ar"}`))
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-ar/stop":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-ar/logs":
+			_, _ = w.Write([]byte(`{"lines":[]}`))
+		case r.URL.Path == "/api/tasks/task-ar":
+			_, _ = w.Write([]byte(`{"done":0,"ok":0,"failed":0,"total":2,"state":"running"}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	s.SetClient(testClient(srv))
+	s.SetPoolFunc(func() int { return 0 })
+	s.Update(map[string]any{"total": 2, "threads": 1, "mode": "total", "auto_refill": true, "check_interval": 1})
+	s.Start()
+	if creates != 1 {
+		t.Fatalf("start creates = %d, want 1", creates)
+	}
+	cfg := s.Stop()
+	if cfg.AutoRefill {
+		t.Fatal("Stop should disable auto_refill")
+	}
+	// 等待 pollLoop goroutine 退出，避免测试结束后仍写临时目录（Windows 清理竞态）
+	waitRunning(t, s)
+	// 停止后巡检不得再补号
+	s.refillCheck()
+	if creates != 1 {
+		t.Fatalf("refillCheck after Stop creates = %d, want still 1", creates)
+	}
+}
+
+// TestMaxFailCircuitBreaker 连续失败达上限后自动停止并关闭自动注册；有成功则清零。
+// 通过可控的远端状态依次驱动 3 轮：失败、失败（熔断）、成功（清零）。
+func TestMaxFailCircuitBreaker(t *testing.T) {
+	s := NewWithDir(t.TempDir())
+	var mu sync.Mutex
+	var creates, stops int
+	// 每轮任务返回的状态由 round 控制：0=running（保持不结束），>0=failed 轮次
+	state := `{"done":0,"ok":0,"failed":0,"total":2,"state":"running"}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
+			mu.Lock()
+			creates++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{"task_id":"task-mf"}`))
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-mf/stop":
+			mu.Lock()
+			stops++
+			mu.Unlock()
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-mf/logs":
+			_, _ = w.Write([]byte(`{"lines":[]}`))
+		case r.URL.Path == "/api/tasks/task-mf":
+			mu.Lock()
+			cur := state
+			mu.Unlock()
+			_, _ = w.Write([]byte(cur))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	s.SetClient(testClient(srv))
+	s.SetPoolFunc(func() int { return 0 })
+	// 用 quota 模式（AutoFollow=false）避免任务结束后自动续跑，便于逐轮驱动
+	s.Update(map[string]any{"mode": "quota", "target_quota": 2, "threads": 1, "auto_refill": true,
+		"max_fail_enabled": true, "max_fail_rounds": 2})
+
+	// 等待 pollLoop 处理完一轮（consecutiveFail 达到 want）
+	waitFail := func(want int) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			s.mu.RLock()
+			got := s.consecutiveFail
+			s.mu.RUnlock()
+			if got >= want {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatalf("timeout waiting consecutiveFail >= %d", want)
+	}
+	waitIdle := func() {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			if !s.GetConfig().Enabled {
+				return
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		t.Fatal("timeout waiting idle")
+	}
+
+	// 第 1 轮：全部失败，未达上限 → auto_refill 保持
+	mu.Lock()
+	state = `{"done":2,"ok":0,"failed":2,"total":2,"state":"done"}`
+	mu.Unlock()
+	s.Start()
+	waitFail(1)
+	waitIdle()
+	if !s.GetConfig().AutoRefill {
+		t.Fatal("auto_refill should stay on before reaching the limit")
+	}
+
+	// 第 2 轮：再次全部失败，达到上限 2 → 熔断：关 auto_refill
+	s.Start() // 手动再起一轮（quota 模式不会自动续跑）
+	waitFail(2)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) && s.GetConfig().AutoRefill {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cfg := s.GetConfig()
+	if cfg.AutoRefill {
+		t.Fatal("reaching the limit should disable auto_refill")
+	}
+	if cfg.Enabled || cfg.AutoFollow {
+		t.Fatalf("reaching the limit should stop the task: enabled=%v follow=%v", cfg.Enabled, cfg.AutoFollow)
+	}
+
+	// 熔断后巡检不得再补号
+	mu.Lock()
+	before := creates
+	mu.Unlock()
+	s.refillCheck()
+	mu.Lock()
+	after := creates
+	mu.Unlock()
+	if after != before {
+		t.Fatalf("refillCheck after trip creates = %d, want %d", after, before)
+	}
+
+	// 成功后计数清零：预置非零计数，跑一轮全成功应清零
+	mu.Lock()
+	state = `{"done":2,"ok":2,"failed":0,"total":2,"state":"done"}`
+	mu.Unlock()
+	s.mu.Lock()
+	s.consecutiveFail = 5
+	s.mu.Unlock()
+	s.Update(map[string]any{"auto_refill": true, "mode": "quota", "target_quota": 2})
+	s.Start()
+	deadline = time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if !s.GetConfig().Enabled {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	waitFail(0) // consecutiveFail 归零（waitFail 语义为 >= want）
+	s.mu.RLock()
+	finalFail := s.consecutiveFail
+	s.mu.RUnlock()
+	if finalFail != 0 {
+		t.Fatalf("success round should reset consecutiveFail, got %d", finalFail)
+	}
+}
+
+// TestStop_Reset_AutoFollowCleared 校验 Stop 后 maybeContinue 不会续跑（二次校验）。
+func TestMaybeContinue_StopsAfterStop(t *testing.T) {
+	s := NewWithDir(t.TempDir())
+	var creates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
+			creates++
+			_, _ = w.Write([]byte(`{"task_id":"task-c"}`))
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-c/stop":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks/task-c/logs":
+			_, _ = w.Write([]byte(`{"lines":[]}`))
+		case r.URL.Path == "/api/tasks/task-c":
+			_, _ = w.Write([]byte(`{"done":0,"ok":0,"failed":0,"total":5,"state":"running"}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	s.SetClient(testClient(srv))
+	s.SetPoolFunc(func() int { return 0 })
+	s.Update(map[string]any{"total": 5, "threads": 1, "mode": "total", "auto_refill": true})
+	s.Start()
+	if creates != 1 {
+		t.Fatalf("start creates = %d, want 1", creates)
+	}
+	s.Stop()
+	s.maybeContinue()
+	if creates != 1 {
+		t.Fatalf("maybeContinue after Stop creates = %d, want still 1", creates)
 	}
 }

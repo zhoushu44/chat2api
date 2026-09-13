@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "clean:dist": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
-    "build": "npm run clean:dist && vite build",
+    "build": "npm run clean:dist && vite build && npm run sync",
+    "sync": "node scripts/sync-web-dist.mjs",
     "typecheck": "tsc",
     "preview": "vite preview"
   },

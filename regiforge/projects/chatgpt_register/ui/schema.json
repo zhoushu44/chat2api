@@ -1,0 +1,240 @@
+{
+  "version": 1,
+  "project_id": "chatgpt_register",
+  "summary": "注册 ChatGPT/OpenAI：browser 有头页面 或 http（Sentinel + Auth API，oumiFree 兼容）；邮箱固定 MailNest；产出 Session Token",
+  "required_captcha_types": ["turnstile"],
+  "allowed_email_ids": ["mailnest"],
+  "allowed_proxy_ids": ["none", "wary", "mihomo", "socks5", "http_proxy", "relay_scout"],
+  "defaults": {
+    "total": 1,
+    "start": 1,
+    "concurrency": 1,
+    "stagger": 0,
+    "headless": false
+  },
+  "task_ui": {
+    "show_headless": false,
+    "headless_reason": "http 为协议流程；browser 正式流程固定使用有头浏览器"
+  },
+  "fields": [
+    {
+      "key": "register_mode",
+      "label": "注册模式",
+      "type": "select",
+      "config_path": "projects.chatgpt_register.register_mode",
+      "default": "http",
+      "options": [
+        { "value": "http", "label": "http — Sentinel + Auth API（推荐，oumiFree 兼容）" },
+        { "value": "browser", "label": "browser — 有头 Playwright 页面流程" }
+      ],
+      "help": "http：Sentinel + Auth API（推荐）。browser：有头点页面。邮箱均 mailnest；http 需 Chrome + curl_cffi。"
+    },
+    {
+      "key": "http_fetch_refresh_token",
+      "label": "HTTP 模式尝试获取 refresh_token",
+      "type": "checkbox",
+      "config_path": "projects.chatgpt_register.http_fetch_refresh_token",
+      "default": true,
+      "help": "仅 http。keys 仍写 accessToken；refresh_token 仅流程内获取。",
+      "visible_when": { "field_key": "register_mode", "eq": "http" }
+    },
+    {
+      "key": "http_set_password",
+      "label": "HTTP 模式设置账号密码",
+      "type": "checkbox",
+      "config_path": "projects.chatgpt_register.http_set_password",
+      "default": true,
+      "help": "仅 http。注册链先 POST user/register 设密码再 OTP（v0.5.5 存活优势）：无密码号只能靠临时邮箱收码登录，域名失效即永久丢失。",
+      "visible_when": { "field_key": "register_mode", "eq": "http" }
+    },
+    {
+      "key": "http_bind_2fa",
+      "label": "HTTP 模式绑定 TOTP 2FA",
+      "type": "checkbox",
+      "config_path": "projects.chatgpt_register.http_bind_2fa",
+      "default": false,
+      "help": "仅 http。注册成功后程序化绑定 TOTP 2FA（v0.5.5 快路径，secret 只出现一次），提升账号保活能力。",
+      "visible_when": { "field_key": "register_mode", "eq": "http" }
+    },
+    {
+      "key": "http_sentinel_refresh",
+      "label": "HTTP 模式按 flow 现算 Sentinel",
+      "type": "checkbox",
+      "config_path": "projects.chatgpt_register.http_sentinel_refresh",
+      "default": true,
+      "help": "仅 http。QuickJS + 真实 sdk.js 按 username_password_create / oauth_create_account 现算 Sentinel（需要 Node），flow 不匹配是风控特征。",
+      "visible_when": { "field_key": "register_mode", "eq": "http" }
+    },
+    {
+      "key": "mail_timeout",
+      "label": "邮箱验证码超时（秒）",
+      "type": "number",
+      "config_path": "projects.chatgpt_register.mail_timeout",
+      "default": 180,
+      "min": 30,
+      "max": 600
+    },
+    {
+      "key": "profile_timeout",
+      "label": "资料页等待（秒）",
+      "type": "number",
+      "config_path": "projects.chatgpt_register.profile_timeout",
+      "default": 90,
+      "min": 15,
+      "max": 300,
+      "help": "仅 browser 模式。",
+      "visible_when": { "field_key": "register_mode", "eq": "browser" }
+    },
+    {
+      "key": "session_timeout",
+      "label": "Session 等待（秒）",
+      "type": "number",
+      "config_path": "projects.chatgpt_register.session_timeout",
+      "default": 120,
+      "min": 30,
+      "max": 600,
+      "help": "仅 browser 模式。",
+      "visible_when": { "field_key": "register_mode", "eq": "browser" }
+    },
+    {
+      "key": "user_agent",
+      "label": "浏览器 / HTTP User-Agent（可选）",
+      "type": "text",
+      "config_path": "projects.chatgpt_register.user_agent",
+      "default": ""
+    },
+    {
+      "key": "browser_channel",
+      "label": "浏览器 Channel",
+      "type": "text",
+      "config_path": "projects.chatgpt_register.browser_channel",
+      "default": "chrome",
+      "placeholder": "chrome",
+      "help": "默认系统 Chrome；留空用自带 Chromium。browser 与 http 取 Sentinel 均可用。"
+    },
+    {
+      "key": "browser_backend",
+      "label": "浏览器底座",
+      "type": "select",
+      "config_path": "projects.chatgpt_register.browser_backend",
+      "default": "",
+      "options": [
+        { "value": "", "label": "跟随全局 browser.backend（默认 playwright）" },
+        { "value": "playwright", "label": "playwright — 原版 Playwright" },
+        { "value": "patchright", "label": "patchright — CDP 修补（免费，pip install patchright）" }
+      ],
+      "help": "browser 流程与 http 取 Sentinel 均生效。patchright 需 pip install patchright。"
+    },
+    {
+      "key": "enable_2fa",
+      "label": "启用 2FA（双重验证）",
+      "type": "checkbox",
+      "config_path": "projects.chatgpt_register.enable_2fa",
+      "default": false,
+      "help": "启用后自动设置 TOTP 2FA 并保存密钥，提升账号保活能力（需 browser 模式）",
+      "visible_when": { "field_key": "register_mode", "eq": "browser" }
+    },
+    {
+      "key": "2fa_timeout",
+      "label": "2FA 设置超时（秒）",
+      "type": "number",
+      "config_path": "projects.chatgpt_register.2fa_timeout",
+      "default": 120,
+      "min": 60,
+      "max": 300,
+      "help": "仅 browser 模式 + 启用 2FA 时生效",
+      "visible_when": { "field_key": "enable_2fa", "eq": true }
+    }
+  ],
+  "steps": [
+    {
+      "id": "mode",
+      "title": "模式选择",
+      "file": "project.py",
+      "desc": "register_mode=http|browser；默认推荐 http"
+    },
+    {
+      "id": "sentinel",
+      "title": "Sentinel（http）",
+      "file": "steps/_sentinel.py",
+      "desc": "短生命周期浏览器提取 OpenAI Sentinel Token / cookie"
+    },
+    {
+      "id": "http_engine",
+      "title": "HTTP 引擎（http）",
+      "file": "steps/_http_engine.py",
+      "desc": "curl_cffi 调 Auth API：CSRF→signin→OAuth→OTP→create_account→session；403 整段重试"
+    },
+    {
+      "id": "step01",
+      "title": "打开登录页（browser）",
+      "file": "steps/step01_open_login.py",
+      "desc": "打开 chatgpt.com/auth/login 并进入邮箱流程"
+    },
+    {
+      "id": "step02",
+      "title": "提交邮箱（browser）",
+      "file": "steps/step02_submit_email.py",
+      "desc": "提交邮箱并处理 Cloudflare / Turnstile"
+    },
+    {
+      "id": "step03",
+      "title": "邮箱验证",
+      "file": "steps/step03_verify_email.py",
+      "desc": "ctx.email.wait_code 收取 OTP（browser 填写；http 由引擎回调）"
+    },
+    {
+      "id": "step04",
+      "title": "资料与引导（browser）",
+      "file": "steps/step04_complete_profile.py",
+      "desc": "自动填写姓名/年龄/生日"
+    },
+    {
+      "id": "step05",
+      "title": "提取 Session",
+      "file": "steps/step05_extract_session.py",
+      "desc": "browser 读 /api/auth/session；http 在引擎内直接取 accessToken"
+    },
+    {
+      "id": "step06",
+      "title": "设置 2FA（可选）",
+      "file": "steps/step06_setup_2fa.py",
+      "desc": "启用 TOTP 双重验证，提取密钥和备用码（仅 browser 模式 + enable_2fa=true）"
+    }
+  ],
+  "output": {
+    "title": "最近产出 ChatGPT Session",
+    "line_format": "email|accessToken|[totp_secret]|[backup_codes]",
+    "preview_limit": 50,
+    "empty_hint": "跑通后写入 data/keys/chatgpt_register/api_keys.txt；可在控制台「导出 / 导入账号池」导出",
+    "note": "如启用 2FA，会额外输出 totp_secret 和 backup_codes"
+  },
+  "account_columns": [
+    {"key": "email", "label": "Email"},
+    {"key": "extra.plan_type", "label": "订阅类型"},
+    {"key": "extra.type", "label": "类型"},
+    {"key": "extra.source_type", "label": "来源"},
+    {"key": "extra.mode", "label": "注册模式"},
+    {"key": "extra.name", "label": "姓名"},
+    {"key": "extra.2fa_enabled", "label": "2FA"},
+    {"key": "registered_at", "label": "注册时间", "type": "datetime"}
+  ],
+  "import": {
+    "exporter_id": "chatgpt2api",
+    "label": "导入到 chatgpt2api",
+    "confirm_hint": "将把当前产出的 accessToken 导入到 chatgpt2api 服务（导入后自动刷新 type/quota）",
+    "confirm_warning": "成功导入的账号将从最近产出中删除",
+    "auto": true,
+    "auto_hint": "任务完成后自动把成功账号导入 chatgpt2api 账号池"
+  },
+  "help_file": "help.md",
+  "notes": [
+    "邮箱固定 mailsys/mailnest（project_code=chatgpt001）；不在项目内复制取件实现",
+    "http 模式改编自 oumiFree：Sentinel + curl_cffi，不迁入其 IMAP/GUI/代理实现",
+    "http 依赖：系统 Google Chrome + pip 已装 curl_cffi；代理建议 SOCKS5（引擎会 socks5→socks5h）",
+    "authorize 403 / 卡在 authorize 时自动整段重试（新 Sentinel + 新会话，默认最多 3 次）",
+    "browser 模式仍可能需要手动过 Cloudflare；http 不点页面盾，但取 Sentinel 时仍可能被 CF 拦截",
+    "建议 total=1、concurrency=1 先调试；可选 patchright 作浏览器底座",
+    "导出用全局 export/*：file / sub2api（access_token=$credential）/ grok2api；不在项目内写导入逻辑"
+  ]
+}

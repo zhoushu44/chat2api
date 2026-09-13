@@ -175,3 +175,43 @@ func (c *Client) GetLogs(id string) ([]string, error) {
 func (c *Client) StopTask(id string) error {
 	return c.doJSON(http.MethodPost, "/api/tasks/"+id+"/stop", map[string]any{}, 20*time.Second, nil)
 }
+
+// SyncConfig 将本地注册配置推送到 RegiForge 的 config.json（PUT /api/config）。
+//
+// 背景：单镜像/本地部署下，用户在 chat2api 页面填写的邮箱、代理、验证码等参数
+// 只保存在 chat2api 侧；而真正执行注册的 RegiForge 读写的是它自己的 config.json。
+// 若不推送，RegiForge 会因 api_key 为空而报“未配置 api_key”。
+//
+// 采用合并（先 GET 再局部覆盖）而非整体替换，避免清掉 RegiForge 自身的其他配置。
+func (c *Client) SyncConfig(patch map[string]any) error {
+	if len(patch) == 0 {
+		return nil
+	}
+	var current map[string]any
+	if err := c.doJSON(http.MethodGet, "/api/config", nil, 20*time.Second, &current); err != nil {
+		return fmt.Errorf("regiforge get config: %w", err)
+	}
+	if current == nil {
+		current = map[string]any{}
+	}
+	merged := mergeConfig(current, patch)
+	return c.doJSON(http.MethodPut, "/api/config", map[string]any{"config": merged}, 20*time.Second, nil)
+}
+
+// mergeConfig 深度合并 patch 到 base（同 key 为 map 时递归，否则覆盖）。
+func mergeConfig(base, patch map[string]any) map[string]any {
+	out := make(map[string]any, len(base))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range patch {
+		if pv, ok := v.(map[string]any); ok {
+			if bv, ok := out[k].(map[string]any); ok {
+				out[k] = mergeConfig(bv, pv)
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
+}

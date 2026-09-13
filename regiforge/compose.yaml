@@ -1,0 +1,22 @@
+services:
+  regiforge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: regiforge
+    restart: unless-stopped
+    init: true
+    ports:
+      - "127.0.0.1:8787:8787"
+    environment:
+      TZ: Asia/Shanghai
+      OPENAI_SENTINEL_NODE_PATH: /usr/bin/node
+    volumes:
+      - ./data:/app/data:Z
+    shm_size: "1gb"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8787/api/meta', timeout=10).read()"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      start_period: 30s

@@ -1,13 +1,35 @@
-version: "3.8"
+# 单容器编排：chatgpt2api(Go) + regiforge(Python/Chrome) 打成一个镜像。
+# 本地启动：docker compose up -d --build
+# 访问：http://localhost:3077
+#
+# 单镜像的好处：本地与线上完全一致，无需关心容器间网络/DNS，
+# 不会再出现 `dial tcp: lookup regiforge: no such host`。
 services:
-  chatgpt2api-go:
-    build: .
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.single
+    image: chatgpt2api-all-in-one:local
+    container_name: chatgpt2api-all-in-one
+    restart: unless-stopped
+    init: true
     ports:
-      - "3000:3000"
+      - "3077:3077"
       - "6060:6060"
     volumes:
       - ./data:/data
+      # 如需保留 regiforge 的运行数据（keys/tasks/日志），取消下行注释：
+      # - ./data/regiforge:/opt/regiforge/data
     environment:
       - STORAGE_BACKEND=json
-      - CHATGPT2API_AUTH_KEY=
-    restart: unless-stopped
+      - CHATGPT2API_AUTH_KEY=${CHATGPT2API_AUTH_KEY:-}
+      # 代理池：注册必须走非 CN 出口，否则 OpenAI 直接 403。
+      # 留空则不同步代理配置（RegiForge 保持自身 config.json 的设置）。
+      - REGIFORGE_PROXY_API_URL=${REGIFORGE_PROXY_API_URL:-}
+      - REGIFORGE_PROXY_API_KEY=${REGIFORGE_PROXY_API_KEY:-}
+      # 注册成功账号自动导入 chat2api 账号池（同容器 3077）。
+      - REGIFORGE_EXPORT_BASE_URL=${REGIFORGE_EXPORT_BASE_URL:-}
+      - REGIFORGE_EXPORT_ADMIN_PASSWORD=${REGIFORGE_EXPORT_ADMIN_PASSWORD:-}
+      # 生图出站代理：chatgpt.com 直连被 CN 拒绝，需 socks5 非 CN 出口。
+      - CHATGPT2API_PROXY=${CHATGPT2API_PROXY:-}
+    shm_size: "1gb"

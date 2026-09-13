@@ -1,0 +1,180 @@
+{
+  "captcha": {
+    "hcaptcha": {
+      "captcharun": {
+        "api_key": "",
+        "api_url": "https://api.captcha-run.com/v2/tasks",
+        "poll_interval": 3,
+        "max_poll": 60
+      }
+    },
+    "cloudflare": {
+      "captcharun": {
+        "api_key": "",
+        "api_url": "https://api.captcha-run.com/v2/tasks",
+        "poll_interval": 3,
+        "max_poll": 60
+      }
+    },
+    "slider": {
+      "aliyun": {
+        "api_url": "",
+        "secret_key": "",
+        "type_id": "20040",
+        "max_retries": 3
+      },
+      "sensenova": {}
+    },
+    "turnstile": {
+      "yescaptcha": {
+        "api_key": "",
+        "api_url": "https://api.yescaptcha.com"
+      },
+      "captcharun": {
+        "api_key": "",
+        "api_url": "https://api.captcha-run.com/v2/tasks",
+        "poll_interval": 3,
+        "max_poll": 60
+      },
+      "capsolver": {
+        "api_key": "",
+        "api_url": "https://api.capsolver.com"
+      }
+    }
+  },
+  "email": {
+    "cloudflare_worker": {
+      "cloudmail_api_base": "https://<your-worker>.workers.dev",
+      "cloudmail_api_key": "",
+      "cloudmail_domains": "example.com",
+      "cloudmail_path_messages": "/api/public/emailList"
+    },
+    "xunmail": {
+      "api_address": "https://www.xunmail.cn/api-doc",
+      "accounts": ""
+    },
+    "mailnest": {
+      "api_key": "",
+      "base_url": "https://mailnest.top",
+      "project_code": "chatgpt001",
+      "project_codes": {
+        "chatgpt_register": "chatgpt001",
+        "nvidia_build": "nvidia001",
+        "grok_register": "x-ai001"
+      },
+      "poll_interval": 3,
+      "auto_release": true
+    },
+    "tempmail": {
+      "api_key": ""
+    }
+  },
+  "proxy": {
+    "none": {},
+    "socks5": {
+      "server": "",
+      "api_url": "",
+      "api_key": "",
+      "timeout": 10,
+      "protocol": "socks5",
+      "json_path": ""
+    },
+    "http_proxy": {
+      "server": ""
+    },
+    "clash": {
+      "clash_api_url": "",
+      "clash_api_secret": "",
+      "clash_group_name": "",
+      "clash_local_port": 7897
+    }
+  },
+  "sms": {
+    "jichisms": {
+      "token": "",
+      "sid": "",
+      "ascription": "1",
+      "paragraph": ""
+    }
+  },
+  "verify": {
+    "nvidia_api": {
+      "api_url": "https://integrate.api.nvidia.com/v1/models"
+    }
+  },
+  "export": {
+    "file": {
+      "output_dir": "data/exports",
+      "filename": "accounts.txt"
+    },
+    "sub2api": {
+      "base_url": "",
+      "admin_access_token": ""
+    },
+    "grok2api": {
+      "base_url": "",
+      "admin_password": ""
+    },
+    "chatgpt2api": {
+      "base_url": "",
+      "admin_password": ""
+    }
+  },
+  "browser": {
+    "backend": "playwright"
+  },
+  "debug": {
+    "trace": true,
+    "screenshot_on_fail": true,
+    "save_html_on_fail": true,
+    "keep_open_on_fail_seconds": 0
+  },
+  "projects": {
+    "nvidia_build": {
+      "password": "",
+      "browser_backend": "",
+      "browser_channel": "chrome"
+    },
+    "grok_register": {
+      "mail_timeout": 180,
+      "turnstile_timeout": 180,
+      "user_agent": ""
+    },
+    "chatgpt_register": {
+      "register_mode": "http",
+      "http_fetch_refresh_token": true,
+      "mail_timeout": 180,
+      "profile_timeout": 90,
+      "session_timeout": 120,
+      "user_agent": "",
+      "browser_channel": "chrome",
+      "browser_backend": ""
+    },
+    "sensenova_register": {
+      "sms_timeout": 120,
+      "retry_count": 3,
+      "region_code": "86",
+      "user_agent": ""
+    },
+    "tokenrhythm_register": {
+      "sms_timeout": 120,
+      "captcha_timeout": 30,
+      "browser_channel": "chrome",
+      "browser_backend": "playwright",
+      "user_agent": ""
+    }
+  },
+  "ui": {
+    "last_project_id": "nvidia_build",
+    "last_captcha_id": "hcaptcha.captcharun",
+    "last_email_id": "cloudflare_worker",
+    "last_sms_id": "",
+    "last_proxy_id": "socks5",
+    "last_total": 1,
+    "last_start": 1,
+    "last_concurrency": 1,
+    "last_stagger": 0,
+    "last_headless": false,
+    "keys_output_dir": ""
+  }
+}
