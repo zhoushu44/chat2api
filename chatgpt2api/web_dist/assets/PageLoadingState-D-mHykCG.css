@@ -1,1 +1,0 @@
-.page-loading-state__spinner[data-v-bf4b8e63]{display:inline-block;width:20px;height:20px;border:2px solid hsl(var(--border));border-top-color:hsl(var(--foreground));border-radius:999px;animation:page-loading-state-spin-bf4b8e63 .85s linear infinite}@keyframes page-loading-state-spin-bf4b8e63{to{transform:rotate(360deg)}}

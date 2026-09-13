@@ -36,12 +36,21 @@ class ChatGPT2ApiExportProvider(ExportProvider):
                 continue
             # extra 由各项目 ok_result 填充（type/source_type/plan_type）
             extra = account.extra or {}
-            entries.append({
+            entry = {
                 "access_token": account.apikey,
                 "email": account.email or None,
                 "type": extra.get("type") or "free",
                 "source_type": extra.get("source_type") or "web",
-            })
+            }
+            # 恢复凭据：password + totp_secret 让 chatgpt2api 可在 AT 失效时走
+            # 「邮箱+密码+TOTP」协议登录恢复（不等邮箱 OTP）。仅非空时带上。
+            password = str(extra.get("password") or "").strip()
+            if password:
+                entry["password"] = password
+            totp_secret = str(extra.get("totp_secret") or "").strip()
+            if totp_secret:
+                entry["totp_secret"] = totp_secret
+            entries.append(entry)
             credentials.append(account.apikey)
         if not entries:
             return ExportResult(status="empty", detail="没有可导入的账号凭据")

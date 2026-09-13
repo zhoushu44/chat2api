@@ -1,8 +1,8 @@
 # ChatGPT2API（单镜像全功能版：Go 生图 + Python 注册引擎）
 
 > **一个镜像 = Go 主服务（生图/API） + Python regiforge（自动注册） + Chrome**。
-> 灰度走 `:3077`，老 Python 容器 `:3000` 不动。
-> Docker 镜像：**`zhoushu1/chat2api`**（标签 `7.0` / `latest`），监听 `0.0.0.0:3077`。
+> Docker 镜像：**`zhoushu1/chat2api`**（标签 `8.0` / `latest`），监听 `0.0.0.0:3077`。
+> 单容器内由 supervisor 统一拉起两个进程，无跨容器网络/DNS 依赖。
 > 进度总表见 [`进度.md`](进度.md)。
 
 ---
@@ -68,14 +68,19 @@
 
 ## 一、Docker 部署（推荐，最简）
 
-镜像已由 GitHub Action 自动构建并推送到 Docker Hub：`zhoushu1/chat2api`。
-容器内监听 `0.0.0.0:3077`，端口好记。
+镜像由 GitHub Action 自动构建并推送到 Docker Hub：`zhoushu1/chat2api`。
+**一个容器 = Go 主服务 + regiforge 注册引擎 + Chrome**，由 `supervisor` 统一拉起：
+
+| 进程 | 监听 | 说明 |
+|---|---|---|
+| chatgpt2api（Go） | `0.0.0.0:3077` | 对外 API / 生图 / Web 控制台 |
+| regiforge（Python） | `127.0.0.1:8787` | 仅容器内，Go 通过 127.0.0.1 访问 |
 
 ### 1. 拉取镜像
 
 ```bash
 # 稳定版
-docker pull zhoushu1/chat2api:7.0
+docker pull zhoushu1/chat2api:8.0
 # 最新版
 docker pull zhoushu1/chat2api:latest
 ```
@@ -97,11 +102,13 @@ docker run -d \
 
 | 参数 | 作用 |
 |---|---|
-| `-p 3077:3077` | 宿主 3077 → 容器 3077（端口好记） |
+| `-p 3077:3077` | 宿主 3077 → 容器 3077（主服务端口） |
 | `-v $(pwd)/data:/data` | 配置与账号持久化到本地 `data/`（含 `config.json`、`accounts.json`） |
 | `-e STORAGE_BACKEND=json` | 存储后端：json/sqlite/postgres/git/pebble |
 | `-e CHATGPT2API_AUTH_KEY` | 调用 API 的 Bearer 鉴权密钥 |
 | `--restart unless-stopped` | 开机自启、异常重启 |
+
+> Chrome 跑在容器内需要共享内存；若注册流程报 Chrome 崩溃，加 `--shm-size=1gb`。
 
 Windows PowerShell 用 `$PWD` 替代 `$(pwd)`：
 
@@ -112,6 +119,8 @@ docker run -d --name chat2api -p 3077:3077 -v ${PWD}/data:/data `
 ```
 
 > 完整环境变量（代理、自动入库等）见 [第四章](#四环境变量)。
+> regiforge 自身数据（keys/tasks/日志）默认写在容器内 `/opt/regiforge/data`；
+> 需要持久化时追加 `-v $(pwd)/data/regiforge:/opt/regiforge/data`。
 
 ### 3. 验证
 
@@ -129,38 +138,43 @@ curl -X POST http://127.0.0.1:3077/v1/images/generations \
 
 ### 4. docker-compose 版（推荐生产用）
 
-```yaml
-services:
-  chat2api:
-    image: zhoushu1/chat2api:latest
-    container_name: chat2api
-    ports:
-      - "3077:3077"
-    volumes:
-      - ./data:/data
-    environment:
-      - STORAGE_BACKEND=json
-      - CHATGPT2API_AUTH_KEY=换成你的密钥
-      # 生图出站代理（socks5 非 CN 出口）
-      - CHATGPT2API_PROXY=socks5://代理地址:端口
-      # 注册：代理池 + 自动入库
-      - REGIFORGE_PROXY_API_URL=代理池API地址
-      - REGIFORGE_PROXY_API_KEY=代理池密钥
-      - REGIFORGE_EXPORT_BASE_URL=http://127.0.0.1:3077
-      - REGIFORGE_EXPORT_ADMIN_PASSWORD=和上面鉴权密钥一致
-    restart: unless-stopped
-    shm_size: "1gb"
-```
+使用仓库自带的 [`docker-compose.yml`](docker-compose.yml)，环境变量从 `.env` 读取
+（复制 [`.env.example`](.env.example) 为 `.env` 后填写）：
 
 ```bash
-docker compose up -d        # 启动
-docker compose logs -f      # 看日志，出现 "listening on :3077" 即起
-docker compose down         # 停止
+cp .env.example .env           # 填入 CHATGPT2API_AUTH_KEY、代理等
+
+docker compose up -d --build   # 构建并启动
+docker compose logs -f         # 看日志，出现 "listening on :3077" 即起
+docker compose down            # 停止
 ```
+
+compose 关键配置：
+
+| 项 | 值 |
+|---|---|
+| 服务名 / 容器名 | `app` / `chatgpt2api-all-in-one` |
+| 端口 | `3077:3077`、`6060:6060`（pprof） |
+| 数据卷 | `./data:/data` |
+| `shm_size` | `1gb`（Chrome 需要） |
+| `restart` | `unless-stopped` |
+
+`.env` 可配变量（全部可选，留空即不启用对应能力）：
+
+| 变量 | 作用 |
+|---|---|
+| `CHATGPT2API_AUTH_KEY` | API Bearer 鉴权密钥（留空则不鉴权） |
+| `REGIFORGE_PROXY_API_URL` / `REGIFORGE_PROXY_API_KEY` | 注册用代理池，自动同步到 RegiForge 的 `proxy.wary` |
+| `REGIFORGE_EXPORT_BASE_URL` / `REGIFORGE_EXPORT_ADMIN_PASSWORD` | 注册成功后自动入库到本容器 |
+| `CHATGPT2API_PROXY` | 生图出站代理（socks5/http 非 CN 出口） |
+
+> 如需持久化 regiforge 的运行数据（keys/tasks/日志），取消 `docker-compose.yml` 中
+> `./data/regiforge:/opt/regiforge/data` 那行的注释。
 
 ### 5. 准备 data/config.json
 
-首次启动前在挂载的 `data/` 目录放 `config.json`：
+`data/config.json` 会在首次启动时由 entrypoint 自动生成（`auth-key` 取自 `CHATGPT2API_AUTH_KEY`）。
+如需自定义，可自行放入挂载的 `data/` 目录：
 
 ```json
 {
@@ -174,7 +188,7 @@ docker compose down         # 停止
 
 ---
 
-## 二、一键运行（源码构建单镜像）
+## 二、源码构建单镜像
 
 ```bash
 # 一键构建并启动（首次构建需装 Chrome，耗时较久）
@@ -184,18 +198,18 @@ docker compose up -d --build
 open http://localhost:3077
 ```
 
-镜像构成：
+镜像分两阶段构建（[`Dockerfile.single`](Dockerfile.single)）：
 
-| 层 | 内容 |
+| 阶段 | 内容 |
 |---|---|
-| 构建阶段 | `golang:1.26-alpine` 编译出静态二进制 `/chatgpt2api-go` |
+| 构建阶段 | `golang:1.26-alpine` 编译出静态二进制 `/chatgpt2api-go`（前端产物已 embed 在 `internal/api/web_dist`） |
 | 运行阶段 | `python:3.11-slim-bookworm` + Chrome + regiforge 依赖 + Go 二进制 |
-| 进程管理 | `supervisor` 同时拉起 regiforge 与 chatgpt2api，任一退出自动重启 |
-| 端口 | 仅对外暴露 `3077`（主服务）；regiforge 只在容器内 `127.0.0.1:8787` |
+| 进程管理 | `supervisor`（[`deploy/single/supervisord.conf`](deploy/single/supervisord.conf)）同时拉起 regiforge 与 chatgpt2api，任一退出自动重启 |
+| 入口 | [`deploy/single/entrypoint.sh`](deploy/single/entrypoint.sh)：创建 `/data`，缺失时生成默认 `config.json` |
+| 端口 | 仅对外暴露 `3077`（主服务）与 `6060`（pprof）；regiforge 只在容器内 `127.0.0.1:8787` |
 | 数据 | `./data` 挂载到 `/data`（含 config.json、accounts.json 等） |
-| 构建文件 | `Dockerfile.single`（CI 与 compose 均使用它） |
 
-不使用 compose 时，也可直接 `docker run`：
+不使用 compose 时，也可直接 `docker build` + `docker run`：
 
 ```bash
 docker build -f Dockerfile.single -t chatgpt2api-all-in-one:local .
@@ -203,12 +217,13 @@ docker run -d --name chatgpt2api \
   -p 3077:3077 \
   -v "$PWD/data:/data" \
   -e CHATGPT2API_AUTH_KEY=你的密钥 \
+  --shm-size=1gb \
   chatgpt2api-all-in-one:local
 ```
 
 ---
 
-## 三、本地构建
+## 三、本地开发（不走 Docker）
 
 ```bash
 # 纯本地（不含注册引擎，仅 Go 服务）
@@ -219,8 +234,8 @@ go build -o chatgpt2api-go ./cmd/server
 cd web-vue && npm install && npm run build   # 自动同步到 internal/api/web_dist
 ```
 
-> ⚠️ 根目录 `Dockerfile` 为**纯 Go 轻量版**（无 regiforge/Chrome），仅用于最小化场景；
-> CI 与生产请使用 **`Dockerfile.single`**。
+> 本地纯 Go 运行时无 regiforge，注册相关功能不可用；注册需要容器内（或另起）的
+> regiforge 服务，并用 `REGIFORGE_BASE_URL` 指向它。
 
 ## 四、环境变量
 
@@ -230,14 +245,17 @@ cd web-vue && npm install && npm run build   # 自动同步到 internal/api/web_
 | `CHATGPT2API_AUTH_KEY` | API Bearer 鉴权密钥 | — |
 | `GIN_MODE` | release/debug | debug |
 | `CHATGPT2API_PROXY` | **生图出站代理**（socks5/http） | — |
-| `REGIFORGE_BASE_URL` | 注册服务地址（单镜像内为 127.0.0.1） | http://regiforge:8787 |
+| `REGIFORGE_BASE_URL` | 注册服务地址（单镜像内为 127.0.0.1） | http://127.0.0.1:8787 |
 | `REGIFORGE_PROJECT_ID` | 注册项目 id | chatgpt_register |
 | `REGIFORGE_PROXY_API_URL` | 注册用代理池 API（自动同步到 RegiForge） | — |
 | `REGIFORGE_PROXY_API_KEY` | 代理池密钥 | — |
 | `REGIFORGE_EXPORT_BASE_URL` | 自动入库地址（单镜像内 http://127.0.0.1:3077） | — |
 | `REGIFORGE_EXPORT_ADMIN_PASSWORD` | 自动入库用的管理员密钥 | — |
 
-pprof：`http://127.0.0.1:6060/debug/pprof/`
+> 上述变量既可直接 `-e` 传给 `docker run`，也可写进 `.env` 由 `docker compose` 读取。
+> `docker-compose.yml` 中所有变量都带 `${VAR:-}` 兜底，未设置时用空值启动。
+
+pprof：`http://127.0.0.1:6060/debug/pprof/`（compose 已映射 6060 端口）
 
 ---
 
@@ -258,7 +276,7 @@ go test ./... -cover
 ## 六、CI 自动构建（GitHub Action）
 
 push 到 `main` / `master` 自动构建并推送镜像到 Docker Hub：
-**`zhoushu1/chat2api:7.0` + `:latest`**（同一个镜像打两个标签，由 Action 自动完成，**本地不执行任何推送**）。
+**`zhoushu1/chat2api:8.0` + `:latest`**（同一个镜像打两个标签，由 Action 自动完成，**本地不执行任何推送**）。
 
 构建文件为 `Dockerfile.single`（单镜像全功能版）。
 

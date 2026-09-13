@@ -62,6 +62,8 @@ type SchedulerConfig struct {
 	Hour        int    `json:"daily_401_hour"`        // DAILY_401_CHECK_HOUR
 	Concurrency int    `json:"daily_401_concurrency"` // DAILY_401_CHECK_CONCURRENCY
 	Timezone    string `json:"daily_401_timezone"`    // DAILY_401_CHECK_TIMEZONE
+	// RecoveryEnabled 协议登录恢复开关（AT 失效时走「邮箱+密码+TOTP」恢复，不等邮箱 OTP）
+	RecoveryEnabled bool `json:"daily_401_recovery_enabled"`
 }
 
 // ProxyRuntimeConfig 出站代理运行时（对等 proxy_runtime；Go 版 backend tls-client 透传 proxy_url）。
@@ -212,10 +214,11 @@ func defaults() *Config {
 			TokenRefreshLeadSecs:  300,
 		},
 		Scheduler: SchedulerConfig{
-			Enabled:     true,
-			Hour:        3,
-			Concurrency: 100,
-			Timezone:    "Asia/Shanghai",
+			Enabled:         true,
+			Hour:            3,
+			Concurrency:     100,
+			Timezone:        "Asia/Shanghai",
+			RecoveryEnabled: true,
 		},
 		RefreshAccountMin:  5,
 		ImageRetentionDays: 15,

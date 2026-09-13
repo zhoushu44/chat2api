@@ -83,9 +83,8 @@ class ChatGPTRegisterProject(RegistrationProject):
         fetch_refresh = bool(project_cfg.get("http_fetch_refresh_token", True))
         enable_2fa = bool(project_cfg.get("enable_2fa", False))
         _2fa_timeout = float(project_cfg.get("2fa_timeout") or 120)
-        # v0.5.5 存活优势：密码注册 / QuickJS 按 flow 现算 sentinel / 绑定 2FA
-        set_password = bool(project_cfg.get("http_set_password", True))
-        bind_2fa = bool(project_cfg.get("http_bind_2fa", False)) or enable_2fa
+        # 注册收口（强制，不读配置开关）：HTTP 模式必然 设密码 + 绑 TOTP 2FA + 立即验活，
+        # 三项任一失败即注册失败（详见 docs/需求-注册存活率对齐.md 需求 1）
         sentinel_refresh = bool(project_cfg.get("http_sentinel_refresh", True))
 
         proxy_info = await ctx.proxy.acquire()
@@ -120,8 +119,6 @@ class ChatGPTRegisterProject(RegistrationProject):
                     browser_backend=browser_backend,
                     mail_timeout=mail_timeout,
                     fetch_refresh=fetch_refresh,
-                    set_password=set_password,
-                    bind_2fa=bind_2fa,
                     sentinel_refresh=sentinel_refresh,
                     reacquire_proxy=_reacquire_proxy,
                 )
@@ -155,8 +152,6 @@ class ChatGPTRegisterProject(RegistrationProject):
         browser_backend: str,
         mail_timeout: float,
         fetch_refresh: bool,
-        set_password: bool = True,
-        bind_2fa: bool = False,
         sentinel_refresh: bool = True,
         reacquire_proxy=None,
     ) -> AccountResult:
@@ -178,8 +173,6 @@ class ChatGPTRegisterProject(RegistrationProject):
                 browser_backend=browser_backend,
                 mail_timeout=mail_timeout,
                 fetch_refresh_token=fetch_refresh,
-                set_password=set_password,
-                bind_2fa=bind_2fa,
                 sentinel_refresh=sentinel_refresh,
                 reacquire_proxy=reacquire_proxy,
                 log=ctx.log,
@@ -194,11 +187,31 @@ class ChatGPTRegisterProject(RegistrationProject):
                     error="HTTP 注册未返回 access_token",
                     failure_class="exception",
                 )
+            # 注册收口：密码 / TOTP 2FA / 验活 三项必须齐活，否则视为失败不产出
+            if not result.get("password"):
+                return await dbg.fail(
+                    None,
+                    None,
+                    step_id="http_register",
+                    status="fail_http_no_password",
+                    error="设密码未成功：无法保证账号可脱离邮箱恢复（注册收口要求）",
+                    failure_class="exception",
+                )
+            if not (result.get("mfa_enabled") and result.get("totp_secret")):
+                return await dbg.fail(
+                    None,
+                    None,
+                    step_id="http_register",
+                    status="fail_http_no_2fa",
+                    error="TOTP 2FA 未绑定：无法保证账号可脱离邮箱恢复（注册收口要求）",
+                    failure_class="exception",
+                )
             ctx.log("Session Token 已提取，HTTP 注册完成")
             rt = result.get("refresh_token") or ""
             if rt:
                 _save_refresh_token(result.get("email") or email, rt)
                 ctx.log("✅ refresh_token 已保存（导入号池后开启自动保活，防还没生成就死）")
+            ctx.log("✅ 注册收口完成：密码 + TOTP 2FA + 验活 全通过")
             return dbg.ok_result(
                 email=result.get("email") or email,
                 apikey=token,
@@ -207,10 +220,11 @@ class ChatGPTRegisterProject(RegistrationProject):
                     "mode": "http",
                     "name": result.get("name") or "",
                     "has_refresh_token": bool(result.get("refresh_token")),
-                    "has_password": bool(result.get("password")),
+                    "has_password": True,
                     "password": result.get("password") or "",
                     "totp_secret": result.get("totp_secret") or "",
-                    "mfa_enabled": bool(result.get("mfa_enabled")),
+                    "mfa_enabled": True,
+                    "alive_verified": True,
                     # 对齐 chatgpt2api 账号字段：type/source_type（导入后由其自动刷新 type/quota/status）
                     "type": "free",
                     "source_type": "web",

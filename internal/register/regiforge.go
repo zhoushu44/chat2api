@@ -28,7 +28,7 @@ type Client struct {
 // NewClientFromEnv 从环境变量构造，默认值对齐 Python register_service.py:46-52。
 func NewClientFromEnv() *Client {
 	return &Client{
-		BaseURL:   strings.TrimRight(envOr("REGIFORGE_BASE_URL", "http://regiforge:8787"), "/"),
+		BaseURL:   strings.TrimRight(envOr("REGIFORGE_BASE_URL", "http://127.0.0.1:8787"), "/"),
 		ProjectID: envOr("REGIFORGE_PROJECT_ID", "chatgpt_register"),
 		EmailID:   envOr("REGIFORGE_EMAIL_ID", "mailnest"),
 		ProxyID:   envOr("REGIFORGE_PROXY_ID", "wary"),

@@ -14,14 +14,17 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 
 	"chatgpt2api/internal/account"
+	"chatgpt2api/internal/account/oauth"
 	"chatgpt2api/internal/api"
 	"chatgpt2api/internal/autotune"
 	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/config"
+	"chatgpt2api/internal/proxy"
 	"chatgpt2api/internal/provider"
 	"chatgpt2api/internal/register"
 	"chatgpt2api/internal/scheduler"
@@ -66,8 +69,47 @@ func main() {
 		}
 		return be.VerifyToken(acctCtx) == nil
 	}
+	// D 段：401 验活失败后的协议登录恢复（邮箱+密码+TOTP，不等邮箱 OTP）
+	sched.RecoveryEnabled = cfg.Scheduler.RecoveryEnabled
+	sched.RecoverAttempts = 3 // 网络约 5% 瞬断，重试防「好账号被一次抖动误杀」
+	// 每次重试前换出口：代理池优先，回退全局代理（坏出口直接跳过）。
+	// 轮换结果通过闭包变量传给 Recover，保证「本轮选中的出口」被真正使用。
+	var rotatedProxy string
+	var rotatedMu sync.Mutex
+	sched.RotateProxy = func() string {
+		p := proxy.DefaultPool.GetNext("")
+		if p == "" {
+			p = cfg.EffectiveProxy()
+		}
+		rotatedMu.Lock()
+		rotatedProxy = p
+		rotatedMu.Unlock()
+		return p
+	}
+	sched.Recover = func(a *account.Account) (string, string, error) {
+		rotatedMu.Lock()
+		pxy := rotatedProxy
+		rotatedMu.Unlock()
+		if pxy == "" {
+			pxy = cfg.EffectiveProxy()
+		}
+		res, err := oauth.LoginWithPassword(a.Email, a.Password, a.TOTPSecret, pxy, func(s string) {
+			log.Printf("[recovery] %s %s", a.Email, s)
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return res.AccessToken, res.SessionToken, nil
+	}
 	sched.Start()
 	defer sched.Stop()
+	// 账号页开关覆盖：持久化设置 > 配置文件默认
+	if persisted, ok := scheduler.LoadPersistedEnabled(cfg.DataDir, cfg.Scheduler.Enabled); ok && persisted != sched.Enabled {
+		sched.SetEnabled(persisted)
+		log.Printf("[Scheduler] 已从持久化设置覆盖开关：%v", persisted)
+	}
+	// 注入到路由（/api/scheduler GET/PUT，账号页开关用）
+	srv.Sched = sched
 
 	r := srv.NewRouter()
 	log.Printf("chatgpt2api-go listening on %s (storage=%s data=%s accounts=%d) GOMAXPROCS=%d auto_refill=%v", *addr, cfg.StorageType, cfg.DataDir, len(srv.Accounts.List()), runtime.GOMAXPROCS(0), regSvc.GetConfig().AutoRefill)

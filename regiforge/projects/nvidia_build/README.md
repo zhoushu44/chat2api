@@ -16,7 +16,6 @@ NVIDIA Build 注册流程，经共用 `TaskRunner` 运行时获取 `nvapi-` API 
 | `steps/` | 按编号拆分的页面步骤与私有共享实现（`_flow.py` 含 step11/step12 主体逻辑与踩坑回退） |
 | `ui/` | 控制台项目规划与帮助 |
 | `STEPS.md` | 步骤参考（含 step11 `/v1/error` 检测、step12.5 验证码无效重试踩坑） |
-| `L4_UPGRADE_STATUS.md` | HTTP 模式 L4 升级计划（独立工作，状态见文件本身） |
 
 ## 共用能力
 

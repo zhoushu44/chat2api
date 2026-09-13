@@ -91,8 +91,12 @@ type Service struct {
 	dir      string
 	cfg      Config
 	logs     []LogEntry
-	pollDone chan struct{}
 	starting bool
+	// pollWG 追踪轮询/巡检协程，Stop 时等待其退出（避免测试清理临时目录时句柄未释放）
+	pollWG sync.WaitGroup
+	// stopCh 关闭后 refillLoop / pollLoop 的休眠被打断并退出
+	stopCh   chan struct{}
+	stopOnce sync.Once
 	// 连续失败轮次计数（内存态，成功一轮即清零；不持久化）
 	consecutiveFail int
 	// Forge RegiForge 任务桥接客户端（R3 真实链路；测试可用 SetClient 注入 httptest 指向）
@@ -117,7 +121,7 @@ func placeholderMailProvider() map[string]any {
 func runtimeChannel() map[string]string {
 	base := os.Getenv("REGIFORGE_BASE_URL")
 	if base == "" {
-		base = "http://regiforge:8787"
+		base = "http://127.0.0.1:8787"
 	}
 	return map[string]string{
 		"email_id":   envOr("REGIFORGE_EMAIL_ID", "mailnest"),
@@ -348,11 +352,18 @@ func NewWithDir(dir string) *Service {
 	}
 	s.poolFunc = s.defaultPoolFunc
 	s.Forge = NewClientFromEnv()
+	if s.stopCh == nil {
+		s.stopCh = make(chan struct{})
+	}
 	// 后台自动注册巡检常驻
-	go s.refillLoop()
+	s.pollWG.Add(1)
+	go func() {
+		defer s.pollWG.Done()
+		s.refillLoop()
+	}()
 	// 若之前有运行中任务，尝试恢复轮询（简化：仅标记 enabled）
 	if s.cfg.Enabled && s.cfg.Stats.TaskID != "" {
-		go s.pollLoop(s.cfg.Stats.TaskID)
+		s.startPollLoop(s.cfg.Stats.TaskID)
 	}
 	return s
 }
@@ -412,9 +423,14 @@ func (s *Service) saveLocked() {
 		clone.Logs = clone.Logs[len(clone.Logs)-300:]
 	}
 	b, _ := json.MarshalIndent(clone, "", "  ")
-	tmp := filepath.Join(s.dir, "register.json.tmp")
-	_ = os.WriteFile(tmp, b, 0644)
-	_ = os.Rename(tmp, filepath.Join(s.dir, "register.json"))
+	// 唯一 tmp 名：并发 saveLocked（巡检/轮询/接口）不会互相覆盖，也不会留下统一名残影
+	tmp := filepath.Join(s.dir, fmt.Sprintf("register.json.%d.tmp", os.Getpid()))
+	if err := os.WriteFile(tmp, b, 0644); err != nil {
+		return
+	}
+	if err := os.Rename(tmp, filepath.Join(s.dir, "register.json")); err != nil {
+		_ = os.Remove(tmp) // rename 失败（如目标被占用）时清掉 tmp，避免残留
+	}
 }
 
 func (s *Service) appendLogLocked(text, level string) {
@@ -606,8 +622,27 @@ func (s *Service) startTask(plan, threads int, mode string, target int) Config {
 	clone := s.cfg
 	clone.Logs = append([]LogEntry(nil), s.logs...)
 	s.mu.Unlock()
-	go s.pollLoop(taskID)
+	s.startPollLoop(taskID)
 	return clone
+}
+
+// startPollLoop 拉起轮询协程并纳入 pollWG 追踪（Stop 时统一等待）。
+func (s *Service) startPollLoop(taskID string) {
+	s.pollWG.Add(1)
+	go func() {
+		defer s.pollWG.Done()
+		s.pollLoop(taskID)
+	}()
+}
+
+// sleepOrStop 可被 Stop 打断的休眠：返回 false 表示已收到停止信号。
+func (s *Service) sleepOrStop(d time.Duration) bool {
+	select {
+	case <-s.stopCh:
+		return false
+	case <-time.After(d):
+		return true
+	}
 }
 
 func (s *Service) pollLoop(taskID string) {
@@ -686,7 +721,9 @@ func (s *Service) pollLoop(taskID string) {
 			interval = s.cfg.CheckInterval
 		}
 		s.mu.RUnlock()
-		time.Sleep(time.Duration(interval) * time.Second)
+		if !s.sleepOrStop(time.Duration(interval) * time.Second) {
+			return
+		}
 	}
 }
 
@@ -807,6 +844,13 @@ func (s *Service) Stop() Config {
 			s.AppendLog(fmt.Sprintf("停止请求失败：%v", err), "red")
 		}
 	}
+	// 通知后台协程退出，并等待其释放（Windows 下不等待会导致测试临时目录清理失败）
+	s.stopOnce.Do(func() {
+		if s.stopCh != nil {
+			close(s.stopCh)
+		}
+	})
+	s.pollWG.Wait()
 	return clone
 }
 
@@ -858,7 +902,9 @@ func (s *Service) refillLoop() {
 		if sleep > 300 {
 			sleep = 300
 		}
-		time.Sleep(time.Duration(sleep) * time.Second)
+		if !s.sleepOrStop(time.Duration(sleep) * time.Second) {
+			return
+		}
 		s.refillCheck()
 	}
 }
