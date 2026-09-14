@@ -199,7 +199,7 @@ func (s *Server) NewRouter() *gin.Engine {
 	}
 	(&SettingsHandler{Store: s.Settings}).Register(adminGroup)
 	if s.Tasks != nil {
-		RegisterImageTasks(adminGroup, s.Tasks)
+		s.RegisterImageTasks(adminGroup)
 	}
 	if s.Prompts != nil {
 		RegisterPrompts(adminGroup, s.Prompts)

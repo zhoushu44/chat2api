@@ -1,0 +1,1 @@
+import{d as e,o as t,c,a as s,t as a}from"./index-BqdQcgrX.js";import{_ as n}from"./TableShell.vue_vue_type_style_index_0_scoped_508ba6a3_lang-Bnmz2l_B.js";const r={class:"code-block scrollbar-slim"},l=e({__name:"CodeBlock",props:{content:{}},setup(o){return(_,p)=>(t(),c("pre",r,[s("code",null,a(o.content),1)]))}}),i=n(l,[["__scopeId","data-v-eb1276d3"]]);export{i as C};

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -399,7 +401,14 @@ func TestStop_DisablesAutoRefill(t *testing.T) {
 // TestMaxFailCircuitBreaker 连续失败达上限后自动停止并关闭自动注册；有成功则清零。
 // 通过可控的远端状态依次驱动 3 轮：失败、失败（熔断）、成功（清零）。
 func TestMaxFailCircuitBreaker(t *testing.T) {
-	s := NewWithDir(t.TempDir())
+	dir := t.TempDir()
+	s := NewWithDir(dir)
+	// 预置账号池：正常账号额度已满足 target_quota，使 maybeContinue 判定「已达标」不自动续跑，
+	// 从而可逐轮手动驱动熔断测试（新语义下 auto_refill=true 会按模式补差额）。
+	if err := os.WriteFile(filepath.Join(dir, "accounts.json"),
+		[]byte(`{"a1":{"status":"正常","quota":100}}`), 0644); err != nil {
+		t.Fatalf("seed accounts: %v", err)
+	}
 	var mu sync.Mutex
 	var creates, stops int
 	// 每轮任务返回的状态由 round 控制：0=running（保持不结束），>0=failed 轮次
@@ -467,7 +476,8 @@ func TestMaxFailCircuitBreaker(t *testing.T) {
 	mu.Lock()
 	state = `{"done":2,"ok":0,"failed":2,"total":2,"state":"done"}`
 	mu.Unlock()
-	s.Start()
+	// 直接调 startTask 驱动单轮：账号池额度已达标，Start 会判定无需注册而提前返回
+	s.startTask(2, 1, "quota", 2)
 	waitFail(1)
 	waitIdle()
 	if !s.GetConfig().AutoRefill {
@@ -475,7 +485,7 @@ func TestMaxFailCircuitBreaker(t *testing.T) {
 	}
 
 	// 第 2 轮：再次全部失败，达到上限 2 → 熔断：关 auto_refill
-	s.Start() // 手动再起一轮（quota 模式不会自动续跑）
+	s.startTask(2, 1, "quota", 2) // 手动再起一轮（账号池已达标，不会自动续跑）
 	waitFail(2)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) && s.GetConfig().AutoRefill {
@@ -509,7 +519,7 @@ func TestMaxFailCircuitBreaker(t *testing.T) {
 	s.consecutiveFail = 5
 	s.mu.Unlock()
 	s.Update(map[string]any{"auto_refill": true, "mode": "quota", "target_quota": 2})
-	s.Start()
+	s.startTask(2, 1, "quota", 2) // 账号池已达标，手动驱动单轮成功
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
 		if !s.GetConfig().Enabled {

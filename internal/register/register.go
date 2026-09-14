@@ -368,25 +368,107 @@ func NewWithDir(dir string) *Service {
 	return s
 }
 
+// 账号状态常量（对齐 internal/account.StatusNormal，此处用字面量避免循环依赖）
+const accountStatusNormal = "正常"
+
+// defaultPoolFunc 账号池总数（所有条数，不过滤状态）。
 func (s *Service) defaultPoolFunc() int {
+	return len(s.readPoolAccounts())
+}
+
+// poolNormalCount 现有状态为「正常」的账号数。
+func (s *Service) poolNormalCount() int {
+	n := 0
+	for _, a := range s.readPoolAccounts() {
+		if poolStatus(a) == accountStatusNormal {
+			n++
+		}
+	}
+	return n
+}
+
+// poolNormalQuota 现有「正常」账号的额度之和（quota < 0 的无限额度哨兵值按 0 计，避免拉低总和）。
+func (s *Service) poolNormalQuota() int {
+	sum := 0
+	for _, a := range s.readPoolAccounts() {
+		if poolStatus(a) != accountStatusNormal {
+			continue
+		}
+		if q := poolInt(a["quota"]); q > 0 {
+			sum += q
+		}
+	}
+	return sum
+}
+
+// readPoolAccounts 读取账号文件（兼容 map 与数组两种格式）。
+func (s *Service) readPoolAccounts() []map[string]any {
 	if s.dir == "" {
-		return 0
+		return nil
 	}
 	b, err := os.ReadFile(filepath.Join(s.dir, "accounts.json"))
 	if err != nil {
-		return 0
+		return nil
 	}
 	var m map[string]any
 	if err := json.Unmarshal(b, &m); err == nil {
-		return len(m)
+		out := make([]map[string]any, 0, len(m))
+		for _, v := range m {
+			if item, ok := v.(map[string]any); ok {
+				out = append(out, item)
+			}
+		}
+		return out
 	}
-	// 尝试数组格式
-	var arr []any
+	var arr []map[string]any
 	if err := json.Unmarshal(b, &arr); err == nil {
-		return len(arr)
+		return arr
+	}
+	return nil
+}
+
+func poolStatus(a map[string]any) string {
+	if v, ok := a["status"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func poolInt(v any) int {
+	switch n := v.(type) {
+	case float64:
+		return int(n)
+	case int:
+		return n
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return int(i)
+		}
 	}
 	return 0
 }
+
+// poolTarget 按模式返回「目标值」与「现有量」，供差额补足统一使用。
+// autoRefill=false 时调用方直接按目标值注册一轮，不走差额。
+func (s *Service) poolTarget() (target, current int, unit string) {
+	switch s.cfg.Mode {
+	case "quota":
+		return s.cfg.TargetQuota, s.poolNormalQuota(), "额度"
+	case "available":
+		return s.cfg.TargetAvailable, s.poolNormalCount(), "正常账号"
+	default:
+		return s.cfg.Total, s.poolTotal(), "账号"
+	}
+}
+
+// poolTotal 现有账号总数（走可注入的 poolFunc，兼容测试注入）。
+func (s *Service) poolTotal() int {
+	if s.poolFunc != nil {
+		return s.poolFunc()
+	}
+	return 0
+}
+
 
 // SetClient 注入 RegiForge 客户端（测试用 httptest server 指向）
 func (s *Service) SetClient(c *Client) {
@@ -528,34 +610,25 @@ func (s *Service) Start() Config {
 		return clone
 	}
 	mode := s.cfg.Mode
-	total := s.cfg.Total
 	threads := s.cfg.Threads
-	target := total
-	plan := total
-	switch mode {
-	case "quota":
-		plan = s.cfg.TargetQuota
-		target = plan
-	case "available":
-		plan = s.cfg.TargetAvailable
-		target = plan
-	default:
-		// total 模式：差额补齐
-		poolTotal := 0
-		if s.poolFunc != nil {
-			poolTotal = s.poolFunc()
-		}
-		plan = total - poolTotal
+	// 目标值与现有量按模式口径统计（total=账号总数 / available=正常账号数 / quota=正常账号额度之和）
+	target, current, unit := s.poolTarget()
+	plan := target
+	if s.cfg.AutoRefill {
+		// 勾选「自动注册」才补差额：计划 = 目标 − 现有量
+		plan = target - current
 		if plan <= 0 {
 			s.cfg.Enabled = false
-			s.appendLogLocked(fmt.Sprintf("账号池已达目标：总数 %d >= %d，无需注册", poolTotal, total), "green")
+			s.appendLogLocked(fmt.Sprintf("已达目标：%s %d >= %d，无需注册", unit, current, target), "green")
 			s.saveLocked()
 			clone := s.cfg
 			clone.Logs = append([]LogEntry(nil), s.logs...)
 			s.mu.Unlock()
 			return clone
 		}
-		s.appendLogLocked(fmt.Sprintf("账号池当前 %d，目标 %d，计划注册 %d 个", poolTotal, total, plan), "yellow")
+		s.appendLogLocked(fmt.Sprintf("自动注册补差额：%s 当前 %d，目标 %d，计划注册 %d 个", unit, current, target, plan), "yellow")
+	} else {
+		s.appendLogLocked(fmt.Sprintf("按数量注册：计划注册 %d 个（未勾选自动注册，不补差额）", plan), "yellow")
 	}
 	s.mu.Unlock()
 	return s.startTask(plan, threads, mode, target)
@@ -606,7 +679,8 @@ func (s *Service) startTask(plan, threads int, mode string, target int) Config {
 	}
 	s.mu.Lock()
 	s.cfg.Enabled = true
-	s.cfg.AutoFollow = (mode == "total")
+	// 差额续跑由「自动注册」开关驱动（不再绑定 total 模式）
+	s.cfg.AutoFollow = s.cfg.AutoRefill
 	s.cfg.Stats = Stats{
 		JobID:      taskID,
 		TaskID:     taskID,
@@ -741,6 +815,9 @@ func (s *Service) applyStatusLocked(st TaskStatus) {
 	if s.cfg.Stats.Success > 0 {
 		s.cfg.Stats.AvgSeconds = round1(s.cfg.Stats.ElapsedSeconds / float64(s.cfg.Stats.Success))
 	}
+	// 当前量（供前端展示「现有正常账号数 / 现有额度」）
+	s.cfg.Stats.CurrentAvailable = s.poolNormalCount()
+	s.cfg.Stats.CurrentQuota = s.poolNormalQuota()
 }
 
 // appendTaskLogsLocked 拉取远端日志尾部去重追加（调用方须持有写锁，对等 Python 取后 15 行）。
@@ -788,13 +865,10 @@ func (s *Service) maybeContinue() {
 	follow := s.cfg.AutoFollow
 	mode := s.cfg.Mode
 	target := s.cfg.Stats.TargetPool
-	if target == 0 {
-		target = s.cfg.Total
-	}
 	threads := s.cfg.Threads
 	s.mu.RUnlock()
 	// 二次校验：AutoFollow 已被 Stop/熔断清掉时不得续跑
-	if !follow || mode != "total" || target <= 0 {
+	if !follow || target <= 0 {
 		return
 	}
 	s.mu.RLock()
@@ -803,22 +877,34 @@ func (s *Service) maybeContinue() {
 	if stopped {
 		return
 	}
-	poolTotal := 0
-	if s.poolFunc != nil {
-		poolTotal = s.poolFunc()
-	}
-	if poolTotal >= target {
+	// 按模式口径取现有量（total=账号总数 / available=正常账号数 / quota=正常账号额度之和）
+	current, unit, plan := s.diffPlan(target)
+	if plan <= 0 {
 		s.mu.Lock()
-		s.appendLogLocked(fmt.Sprintf("账号池已达目标 %d >= %d，自动注册完成", poolTotal, target), "green")
+		s.appendLogLocked(fmt.Sprintf("已达目标：%s %d >= %d，自动注册完成", unit, current, target), "green")
 		s.saveLocked()
 		s.mu.Unlock()
 		return
 	}
-	plan := target - poolTotal
 	s.mu.Lock()
-	s.appendLogLocked(fmt.Sprintf("账号池 %d < 目标 %d，自动补号 %d 个", poolTotal, target, plan), "yellow")
+	s.appendLogLocked(fmt.Sprintf("%s %d < 目标 %d，自动补号 %d 个", unit, current, target, plan), "yellow")
 	s.mu.Unlock()
-	s.startTask(plan, threads, "total", target)
+	s.startTask(plan, threads, mode, target)
+}
+
+// diffPlan 按当前模式计算「现有量 / 单位 / 待补数量」，供 maybeContinue 与 refillCheck 复用。
+func (s *Service) diffPlan(target int) (current int, unit string, plan int) {
+	s.mu.RLock()
+	mode := s.cfg.Mode
+	s.mu.RUnlock()
+	switch mode {
+	case "quota":
+		return s.poolNormalQuota(), "额度", target - s.poolNormalQuota()
+	case "available":
+		return s.poolNormalCount(), "正常账号", target - s.poolNormalCount()
+	default:
+		return s.poolTotal(), "账号", target - s.poolTotal()
+	}
 }
 
 func (s *Service) Stop() Config {
@@ -919,24 +1005,17 @@ func (s *Service) refillCheck() {
 		s.mu.RUnlock()
 		return
 	}
-	if s.cfg.Mode != "total" {
-		s.mu.RUnlock()
-		return
-	}
-	total := s.cfg.Total
+	mode := s.cfg.Mode
 	threads := s.cfg.Threads
-	poolFunc := s.poolFunc
+	target, _, _ := s.poolTarget()
 	s.mu.RUnlock()
-	poolTotal := 0
-	if poolFunc != nil {
-		poolTotal = poolFunc()
-	}
-	plan := total - poolTotal
+	// 按模式口径取现有量后补差额
+	current, unit, plan := s.diffPlan(target)
 	if plan <= 0 {
 		return
 	}
 	s.mu.Lock()
-	s.appendLogLocked(fmt.Sprintf("自动注册巡检：账号池当前 %d < 目标 %d，自动补齐 %d 个", poolTotal, total, plan), "yellow")
+	s.appendLogLocked(fmt.Sprintf("自动注册巡检：%s 当前 %d < 目标 %d，自动补齐 %d 个", unit, current, target, plan), "yellow")
 	s.mu.Unlock()
-	s.startTask(plan, threads, "total", total)
+	s.startTask(plan, threads, mode, target)
 }

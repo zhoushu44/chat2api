@@ -1022,7 +1022,7 @@ const registerConfig = ref<LegacyRegisterConfig | null>(null)
 const registerModeOptions = [
   { value: 'total', label: '按数量注册' },
   { value: 'quota', label: '达到额度停止' },
-  { value: 'available', label: '达到账号数停止' },
+  { value: 'available', label: '达到正常账号数停止' },
 ]
 const registerModeGroups = [{ options: registerModeOptions }]
 const registerProxyModeOptions = [

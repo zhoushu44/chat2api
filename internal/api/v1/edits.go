@@ -148,6 +148,14 @@ func isHTTPURL(s string) bool {
 	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
 }
 
+// IsHTTPURL 导出给 api 包复用（图像任务页参考图同为 http(s) 判定）。
+func IsHTTPURL(s string) bool { return isHTTPURL(s) }
+
+// DownloadImageURL 导出给 api 包复用（同一份 50MB/非图片校验口径）。
+func DownloadImageURL(ctx context.Context, url string) (string, error) {
+	return downloadImageURL(ctx, url)
+}
+
 // imageURLFetchLimit 对等 Python 的 50MB 上限。
 const imageURLFetchLimit = 50 << 20
 
