@@ -1,0 +1,32 @@
+# 10.0 单镜像部署（all-in-one：Go :3077 + 内置 regiforge 127.0.0.1:8787 + Chrome）
+# 由 /root/chat2api/deploy/single/docker-compose.single.yml 管理
+# 由 8.0（容器 chatgpt2api-8）升级而来，端口保持 3077 不变。
+# 敏感值统一从同目录 .env 读取，不再写死在 yml 里。
+services:
+  chatgpt2api:
+    image: zhoushu1/chat2api:11.0
+    container_name: chatgpt2api-11
+    restart: unless-stopped
+    init: true
+    ports:
+      - "3077:3077"
+      - "6061:6060"
+    volumes:
+      # Go 主服务数据（账号池 / config / register.json），沿用原灰度 data 卷
+      - /root/chat2api/deploy/gray/data:/data
+      # 内置 regiforge 数据（config.json / keys / tasks / logs）
+      - /root/chat2api/deploy/single/regiforge-data:/opt/regiforge/data
+    environment:
+      - STORAGE_BACKEND=json
+      - CHATGPT2API_AUTH_KEY=${CHATGPT2API_AUTH_KEY:?set CHATGPT2API_AUTH_KEY in .env}
+      # 内置 regiforge 地址（同容器 127.0.0.1:8787）
+      - REGIFORGE_BASE_URL=http://127.0.0.1:8787
+      - REGIFORGE_PROJECT_ID=chatgpt_register
+      - REGIFORGE_PROXY_ID=wary
+      - REGIFORGE_EMAIL_ID=mailnest
+      # 注册成功账号自动入库到本容器 3077
+      - REGIFORGE_EXPORT_BASE_URL=http://127.0.0.1:3077
+      - REGIFORGE_EXPORT_ADMIN_PASSWORD=${REGIFORGE_EXPORT_ADMIN_PASSWORD:?set REGIFORGE_EXPORT_ADMIN_PASSWORD in .env}
+      # 生图出站代理（留空=直连，与 8.0 一致）
+      - CHATGPT2API_PROXY=
+    shm_size: "1gb"
