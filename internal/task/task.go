@@ -17,14 +17,43 @@ const (
 	Error   Status = "error"
 )
 
+// Asset 单张结果图（对等前端 ImageTaskAsset）。
+type Asset struct {
+	URL           string `json:"url,omitempty"`
+	Path          string `json:"path,omitempty"`
+	B64JSON       string `json:"b64_json,omitempty"`
+	RevisedPrompt string `json:"revised_prompt,omitempty"`
+}
+
 type Task struct {
 	ID        string    `json:"id"`
 	Status    Status    `json:"status"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
-	Result    any       `json:"result,omitempty"`
-	Error     string    `json:"error,omitempty"`
-	CanResume bool      `json:"can_resume_poll"`
+
+	// 图像任务元信息（前端 ImageTasks 页契约）
+	Mode     string `json:"mode,omitempty"`
+	Model    string `json:"model,omitempty"`
+	N        int    `json:"n,omitempty"`
+	Size     string `json:"size,omitempty"`
+	Quality  string `json:"quality,omitempty"`
+	Stage    string `json:"stage,omitempty"`
+	Progress string `json:"progress,omitempty"`
+
+	ConversationID string  `json:"conversation_id,omitempty"`
+	Data           []Asset `json:"data,omitempty"`
+	Usage          any     `json:"usage,omitempty"`
+
+	Error            string `json:"error,omitempty"`
+	ErrorCode        string `json:"error_code,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	UpstreamErrorTyp string `json:"upstream_error_type,omitempty"`
+
+	DurationMS int64 `json:"duration_ms,omitempty"`
+	ElapsedSec float64 `json:"elapsed_secs,omitempty"`
+
+	Result    any    `json:"result,omitempty"`
+	CanResume bool   `json:"can_resume_poll"`
 }
 
 type Service struct {
@@ -113,12 +142,29 @@ func (s *Service) Create(id string) *Task {
 	}
 	return t
 }
-func (s *Service) Update(id string, status Status, result any, errMsg string) {
+
+// Save 新建/覆盖任务（图像任务入口，携带完整元信息）。
+func (s *Service) Save(t *Task) *Task {
+	if t.CreatedAt.IsZero() {
+		t.CreatedAt = time.Now()
+	}
+	t.UpdatedAt = time.Now()
+	s.mu.Lock()
+	s.tasks[t.ID] = t
+	s.dirty = true
+	s.mu.Unlock()
+	select {
+	case s.flushCh <- struct{}{}:
+	default:
+	}
+	return t
+}
+
+// UpdateFunc 原子更新任务（持写锁调用 fn）。
+func (s *Service) UpdateFunc(id string, fn func(t *Task)) {
 	s.mu.Lock()
 	if t, ok := s.tasks[id]; ok {
-		t.Status = status
-		t.Result = result
-		t.Error = errMsg
+		fn(t)
 		t.UpdatedAt = time.Now()
 		s.dirty = true
 	}
@@ -128,20 +174,43 @@ func (s *Service) Update(id string, status Status, result any, errMsg string) {
 	default:
 	}
 }
+
+func (s *Service) Update(id string, status Status, result any, errMsg string) {
+	s.UpdateFunc(id, func(t *Task) {
+		t.Status = status
+		t.Result = result
+		t.Error = errMsg
+	})
+}
 func (s *Service) Get(id string) (*Task, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	t, ok := s.tasks[id]
 	return t, ok
 }
-func (s *Service) List() []*Task {
+
+// ListByIDs 按 id 集合取任务；ids 为空返回全部。
+func (s *Service) ListByIDs(ids []string) []*Task {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := make([]*Task, 0, len(s.tasks))
-	for _, v := range s.tasks {
-		out = append(out, v)
+	if len(ids) == 0 {
+		out := make([]*Task, 0, len(s.tasks))
+		for _, v := range s.tasks {
+			out = append(out, v)
+		}
+		return out
+	}
+	out := make([]*Task, 0, len(ids))
+	for _, id := range ids {
+		if t, ok := s.tasks[id]; ok {
+			out = append(out, t)
+		}
 	}
 	return out
+}
+
+func (s *Service) List() []*Task {
+	return s.ListByIDs(nil)
 }
 func (s *Service) CanResumePoll(id string) bool {
 	s.mu.RLock()
@@ -150,4 +219,30 @@ func (s *Service) CanResumePoll(id string) bool {
 		return t.CanResume && t.Status == Error
 	}
 	return false
+}
+
+// MarkResumable 恢复轮询：重置为 queued 并允许继续等待（前端 resume-poll 入口）。
+func (s *Service) MarkResumable(id string) (*Task, bool) {
+	var out *Task
+	s.mu.Lock()
+	if t, ok := s.tasks[id]; ok {
+		t.Status = Queued
+		t.Stage = "queued"
+		t.Progress = ""
+		t.Error = ""
+		t.ErrorCode = ""
+		t.CanResume = true
+		t.UpdatedAt = time.Now()
+		s.dirty = true
+		out = t
+	}
+	s.mu.Unlock()
+	if out == nil {
+		return nil, false
+	}
+	select {
+	case s.flushCh <- struct{}{}:
+	default:
+	}
+	return out, true
 }
