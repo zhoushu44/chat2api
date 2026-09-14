@@ -11,6 +11,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import os
 import random
 import re
 import secrets
@@ -26,6 +27,12 @@ from core.models import ProxyInfo
 
 from ._fingerprint import detect_country, generate_fingerprint, fingerprint_from_user_ua
 from ._sentinel import extract_sentinel, impersonate_for_ua, sec_ch_ua_for
+from ._sentinel_v8 import SentinelVMError as _SentinelVMError
+
+try:
+    from ._sentinel_v8 import build_first_sentinel_v8 as _build_first_v8
+except Exception:  # pragma: no cover
+    _build_first_v8 = None
 
 
 def _egress_log_path() -> Path:
@@ -1335,26 +1342,58 @@ async def register_http(
             "timezone": fp["timezone_id"],
         }
         t0 = time.time()
-        try:
-            sd = await extract_sentinel(
-                proxy_info=sentinel_proxy_info or proxy_info,
-                user_agent=ua_override,
-                browser_backend=browser_backend,
-                log=_log,
-                fingerprint=fp,
-            )
-        except Exception as exc:
-            last_err = RetriableRegisterError(f"Sentinel 提取失败: {exc}")
-            _log(f"  [错误] {last_err}")
-            _append_egress(
-                {
-                    **egress_rec,
-                    "result": "retry",
-                    "error": str(exc)[:200],
-                    "dur_s": round(time.time() - t_start, 1),
+        # Sentinel 模式：v8=纯 HTTP+Node V8（不开浏览器）；browser=原 Playwright；
+        # auto=默认先 v8，失败自动回退浏览器（可用 CHATGPT_SENTINEL_MODE 覆盖）
+        import json as _json
+
+        sentinel_mode = (
+            os.environ.get("CHATGPT_SENTINEL_MODE") or "auto"
+        ).strip().lower()
+        sd = None
+        if sentinel_mode in ("v8", "auto") and _build_first_v8 is not None:
+            try:
+                vh = await asyncio.to_thread(
+                    _build_first_v8,
+                    proxy_url=_proxy_url(sentinel_proxy_info or proxy_info),
+                    fp=fp,
+                    log=_log,
+                )
+                token_obj = _json.loads(vh.get("openai-sentinel-token", "{}") or "{}")
+                sd = {
+                    "sentinel_token": vh.get("openai-sentinel-token", ""),
+                    "sentinel_so_token": vh.get("openai-sentinel-so-token", ""),
+                    "cookie_str": "",
+                    "oai_did": str(token_obj.get("id") or uuid.uuid4()),
                 }
-            )
-            continue
+                _log(
+                    f"  [Sentinel V8] 成功（无浏览器）takes={time.time() - t0:.1f}s "
+                    f"so={'有' if sd['sentinel_so_token'] else '无'}"
+                )
+            except Exception as exc:
+                if sentinel_mode == "v8":
+                    raise RetriableRegisterError(f"Sentinel V8 失败: {exc}") from exc
+                _log(f"  [Sentinel V8] 失败，回退浏览器: {str(exc)[:160]}")
+        if sd is None:
+            try:
+                sd = await extract_sentinel(
+                    proxy_info=sentinel_proxy_info or proxy_info,
+                    user_agent=ua_override,
+                    browser_backend=browser_backend,
+                    log=_log,
+                    fingerprint=fp,
+                )
+            except Exception as exc:
+                last_err = RetriableRegisterError(f"Sentinel 提取失败: {exc}")
+                _log(f"  [错误] {last_err}")
+                _append_egress(
+                    {
+                        **egress_rec,
+                        "result": "retry",
+                        "error": str(exc)[:200],
+                        "dur_s": round(time.time() - t_start, 1),
+                    }
+                )
+                continue
         if not sd.get("sentinel_token"):
             last_err = RetriableRegisterError("Sentinel token 为空")
             _log(f"  [错误] {last_err}")
