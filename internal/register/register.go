@@ -94,9 +94,9 @@ type Service struct {
 	starting bool
 	// pollWG 追踪轮询/巡检协程，Stop 时等待其退出（避免测试清理临时目录时句柄未释放）
 	pollWG sync.WaitGroup
-	// stopCh 关闭后 refillLoop / pollLoop 的休眠被打断并退出
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	// stopCh 关闭后 refillLoop / pollLoop 的休眠被打断并退出；
+	// 每次 Stop 后由 Stop 末尾重建，保证下一次任务可用
+	stopCh chan struct{}
 	// 连续失败轮次计数（内存态，成功一轮即清零；不持久化）
 	consecutiveFail int
 	// Forge RegiForge 任务桥接客户端（R3 真实链路；测试可用 SetClient 注入 httptest 指向）
@@ -930,13 +930,19 @@ func (s *Service) Stop() Config {
 			s.AppendLog(fmt.Sprintf("停止请求失败：%v", err), "red")
 		}
 	}
-	// 通知后台协程退出，并等待其释放（Windows 下不等待会导致测试临时目录清理失败）
-	s.stopOnce.Do(func() {
-		if s.stopCh != nil {
-			close(s.stopCh)
-		}
-	})
+	// 通知后台协程退出，并等待其释放（Windows 下不等待会导致测试临时目录清理失败）；
+	// 关闭后立即重建 channel，否则下次 Start 后轮询/巡检会读到已关闭 channel 立即退出
+	if s.stopCh != nil {
+		close(s.stopCh)
+	}
 	s.pollWG.Wait()
+	s.stopCh = make(chan struct{})
+	// 巡检协程随 Stop 一并退出，此处重启，保证重新勾选自动注册后仍能巡检补号
+	s.pollWG.Add(1)
+	go func() {
+		defer s.pollWG.Done()
+		s.refillLoop()
+	}()
 	return clone
 }
 

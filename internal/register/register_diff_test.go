@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // seedAccounts 写入账号池文件（map 格式），供统计口径测试。
@@ -158,5 +159,63 @@ func TestDiff_AutoRefill_Reached(t *testing.T) {
 	}
 	if cfg.Enabled {
 		t.Fatal("should not enable when target reached")
+	}
+}
+
+// TestStopThenRestart 回归：Stop 关闭 stopCh 后必须重建，否则下次 Start 轮询协程
+// 在 sleepOrStop 立即退出，状态永久卡住（线上真实 bug）。
+func TestStopThenRestart(t *testing.T) {
+	dir := t.TempDir()
+	var creates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/config":
+			_, _ = w.Write([]byte(`{}`))
+		case r.URL.Path == "/api/tasks" && r.Method == http.MethodPost:
+			creates++
+			_, _ = w.Write([]byte(`{"task_id":"task-r"}`))
+		case r.URL.Path == "/api/tasks/task-r":
+			// 永远 running，靠 Stop 结束
+			_, _ = w.Write([]byte(`{"done":0,"ok":0,"failed":0,"total":5,"state":"running"}`))
+		case r.URL.Path == "/api/tasks/task-r/logs":
+			_, _ = w.Write([]byte(`{"lines":[]}`))
+		case r.URL.Path == "/api/tasks/task-r/stop":
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	s := NewWithDir(dir)
+	s.SetClient(testClient(srv))
+	s.Update(map[string]any{"mode": "total", "total": 5, "threads": 1, "auto_refill": false, "check_interval": 1})
+	// 第一次启动后停止
+	cfg := s.Start()
+	if !cfg.Enabled {
+		t.Fatal("first start should enable")
+	}
+	s.Stop()
+	if s.GetConfig().Enabled {
+		t.Fatal("should be disabled after stop")
+	}
+	// 第二次启动：轮询必须存活（若 stopCh 未重建，pollLoop 立即退出，Enabled 会被清掉）
+	cfg = s.Start()
+	if !cfg.Enabled {
+		t.Fatal("second start should enable (stopCh must be rebuilt after Stop)")
+	}
+	// 轮询至少要跑过一轮（拿到远端状态 Running=5）才证明协程活着
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if s.GetConfig().Stats.Running == 5 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("poll loop dead after restart: running=%d", s.GetConfig().Stats.Running)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	s.Stop()
+	if creates != 2 {
+		t.Fatalf("creates = %d, want 2", creates)
 	}
 }
