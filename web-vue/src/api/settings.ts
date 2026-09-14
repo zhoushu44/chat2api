@@ -279,6 +279,40 @@ export function prepareSettingsForSave(settings: Settings): RawSettings {
   return toBackendSettings(settings)
 }
 
+/**
+ * 计算相对基线的增量设置，用于 PATCH 语义的保存请求。
+ * 只保留真正改动的键；嵌套对象逐层下钻，空对象不发送。
+ */
+export function prepareSettingsPatch(
+  settings: Settings | null | undefined,
+  baseline: Settings | null | undefined,
+): RawSettings {
+  if (!settings) return {}
+  const next = toBackendSettings(settings)
+  const prev = baseline ? toBackendSettings(baseline) : {}
+  return diffRawSettings(prev, next)
+}
+
+function diffRawSettings(prev: RawSettings, next: RawSettings): RawSettings {
+  const patch: RawSettings = {}
+  for (const [key, value] of Object.entries(next)) {
+    const before = prev[key]
+    if (isPlainObject(value) && isPlainObject(before)) {
+      const nested = diffRawSettings(before, value)
+      if (Object.keys(nested).length > 0) patch[key] = nested
+      continue
+    }
+    if (JSON.stringify(before) !== JSON.stringify(value)) {
+      patch[key] = value
+    }
+  }
+  return patch
+}
+
+function isPlainObject(value: unknown): value is RawSettings {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 export const settingsApi = {
   async get() {
     const response = await apiClient.get<never, { config: RawSettings }>('/api/settings')

@@ -20,6 +20,7 @@ import (
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/register"
 	"chatgpt2api/internal/scheduler"
+	"chatgpt2api/internal/settings"
 	"chatgpt2api/internal/task"
 	"chatgpt2api/internal/utils"
 
@@ -49,6 +50,16 @@ type Server struct {
 	Watcher *account.Watcher
 	// 每日 401 验活 + 协议恢复调度器（main 组装后注入；注入前路由不挂开关）
 	Sched *scheduler.Scheduler
+	// 控制台系统设置存储（<DataDir>/settings.json）
+	Settings *settings.Store
+}
+
+// dataDir 统一解析数据目录（Cfg 可能为 nil，此时回落到 ./data）。
+func (s *Server) dataDir() string {
+	if s != nil && s.Cfg != nil && s.Cfg.DataDir != "" {
+		return s.Cfg.DataDir
+	}
+	return "./data"
 }
 
 // NewServer 按 config 组装完整服务树（P0.1）。
@@ -182,6 +193,11 @@ func (s *Server) NewRouter() *gin.Engine {
 	if s.Cfg != nil {
 		(&admin.SystemHandler{Cfg: s.Cfg, Catalog: s.Catalog}).Register(adminGroup)
 	}
+	// 控制台「系统设置」读写（settings.json 落盘 + 关键项热应用）
+	if s.Settings == nil {
+		s.Settings = settings.NewStore(s.dataDir())
+	}
+	(&SettingsHandler{Store: s.Settings}).Register(adminGroup)
 	if s.Tasks != nil {
 		RegisterImageTasks(adminGroup, s.Tasks)
 	}

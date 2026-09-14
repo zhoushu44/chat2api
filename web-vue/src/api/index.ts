@@ -1,6 +1,6 @@
 // Unified API exports
 export { authApi } from './auth'
-export { prepareSettingsForEdit, prepareSettingsForSave, settingsApi } from './settings'
+export { prepareSettingsForEdit, prepareSettingsForSave, prepareSettingsPatch, settingsApi } from './settings'
 export { logsApi } from './logs'
 export { monitorApi } from './monitor'
 export { statsApi } from './stats'

@@ -13,9 +13,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"chatgpt2api/internal/settings"
 )
 
 var (
@@ -144,6 +147,13 @@ func (c *ImageGenerationConfig) UnmarshalJSON(data []byte) error {
 // ExplicitlyDisabled 显式禁用（未配置/零值 Config 视为启用，避免误伤）。
 func (c *ImageGenerationConfig) ExplicitlyDisabled() bool {
 	return c != nil && c.explicit && !c.Enabled
+}
+
+// MarkExplicit 标记该段被显式配置过（面板保存 enabled=false 时也需要门控生效）。
+func (c *ImageGenerationConfig) MarkExplicit() {
+	if c != nil {
+		c.explicit = true
+	}
 }
 
 // QuotaLimitsConfig 配额上限（对等 quota_limits；-1 不限；强制执行未实现，配置透传）。
@@ -328,6 +338,12 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("DAILY_401_CHECK_TIMEZONE"); v != "" {
 		cfg.Scheduler.Timezone = v
 	}
+	// 控制台设置覆盖：<DataDir>/settings.json 存在时优先于 config.json / 环境变量。
+	// 放在最后，保证面板保存的值不会被启动配置再次盖回。
+	// 敏感词过滤由调用方在 Load 之后自行 ApplyRuntimeEffects 下发（避免 config 反向依赖 filter）。
+	if data := settings.NewStore(cfg.DataDir).Snapshot(); len(data) > 0 {
+		applyOverrides(cfg, data)
+	}
 	globalConfig.Store(cfg)
 	// 异步热更新：500ms 轮询 mtime，debounce 100ms
 	if path != "" {
@@ -342,6 +358,195 @@ func Get() *Config {
 		return v.(*Config)
 	}
 	return defaults()
+}
+
+// applyOverrides 把控制台设置（settings.json）合并进配置。
+// 只覆盖白名单内的键，凭证类（auth-key / backup / ai_review）不从面板回写，
+// 避免面板保存把部署时的密钥冲成空值。
+// 注意：DataDir 不在白名单内，因此启动时传入的 DataDir 不会被覆盖，
+// watchConfig 的路径始终有效。
+func applyOverrides(cfg *Config, over map[string]any) {
+	if cfg == nil || len(over) == 0 {
+		return
+	}
+	if v, ok := over["proxy"].(string); ok {
+		cfg.Proxy = strings.TrimSpace(v)
+	}
+	if v, ok := over["base_url"].(string); ok {
+		cfg.BaseURL = strings.TrimSpace(v)
+	}
+	if v, ok := number(over["image_retention_days"]); ok && v >= 1 {
+		cfg.ImageRetentionDays = int(v)
+	}
+	if v, ok := number(over["refresh_account_interval_minute"]); ok && v >= 1 {
+		cfg.RefreshAccountMin = int(v)
+	}
+	if v, ok := stringSlice(over["sensitive_words"]); ok {
+		cfg.SensitiveWords = v
+	}
+	if v, ok := over["global_system_prompt"].(string); ok {
+		cfg.GlobalSystemPrompt = v
+	}
+	if m, ok := over["image_generation"].(map[string]any); ok {
+		applyImageGeneration(cfg, m)
+	}
+	if m, ok := over["proxy_runtime"].(map[string]any); ok {
+		applyProxyRuntime(cfg, m)
+	}
+	if m, ok := over["clearance"].(map[string]any); ok {
+		applyClearance(cfg, m)
+	}
+}
+
+// EnableOverridesFromDir 读取 <dir>/settings.json 并合并进全局配置。
+// NewStore 对缺失/损坏文件返回空设置，此处等价于"无覆盖"。
+func EnableOverridesFromDir(dir string) {
+	if strings.TrimSpace(dir) == "" {
+		return
+	}
+	data := settings.NewStore(dir).Snapshot()
+	if len(data) == 0 {
+		return
+	}
+	applyOverrides(globalConfig.Load().(*Config), data)
+}
+
+// ApplyRuntime 在服务运行中热更新代理相关字段（面板保存后即时生效）。
+func ApplyRuntime(patch map[string]any) {
+	v := globalConfig.Load()
+	if v == nil {
+		return
+	}
+	cfg := v.(*Config)
+	if proxy, ok := patch["proxy"].(string); ok && strings.TrimSpace(proxy) != "" {
+		cfg.Proxy = strings.TrimSpace(proxy)
+	}
+	if words, ok := stringSlice(patch["sensitive_words"]); ok {
+		cfg.SensitiveWords = words
+	}
+	if m, ok := patch["proxy_runtime"].(map[string]any); ok {
+		applyProxyRuntime(cfg, m)
+	}
+	if m, ok := patch["clearance"].(map[string]any); ok {
+		applyClearance(cfg, m)
+	}
+}
+
+func applyImageGeneration(cfg *Config, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		cfg.ImageGeneration.Enabled = v
+		cfg.ImageGeneration.MarkExplicit()
+	}
+	if v, ok := stringSlice(m["supported_models"]); ok {
+		cfg.ImageGeneration.SupportedModels = v
+	}
+	if v, ok := m["output_format"].(string); ok && v != "" {
+		cfg.ImageGeneration.OutputFormat = v
+	}
+}
+
+func applyProxyRuntime(cfg *Config, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		cfg.ProxyRuntime.Enabled = v
+	}
+	if v, ok := m["egress_mode"].(string); ok && v != "" {
+		cfg.ProxyRuntime.EgressMode = v
+	}
+	if v, ok := m["proxy_url"].(string); ok {
+		cfg.ProxyRuntime.ProxyURL = v
+	}
+	if v, ok := m["resource_proxy_url"].(string); ok {
+		cfg.ProxyRuntime.ResourceProxyURL = v
+	}
+	if v, ok := m["skip_ssl_verify"].(bool); ok {
+		cfg.ProxyRuntime.SkipSSLVerify = v
+	}
+	if v, ok := intSlice(m["reset_session_status_codes"]); ok && len(v) > 0 {
+		cfg.ProxyRuntime.ResetSessionStatus = v
+	}
+}
+
+func applyClearance(cfg *Config, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		cfg.Clearance.Enabled = v
+	}
+	if v, ok := m["mode"].(string); ok && v != "" {
+		cfg.Clearance.Mode = v
+	}
+	// cf_cookies / cf_clearance 留空表示"沿用已保存值"，不清除
+	if v, ok := m["cf_cookies"].(string); ok && strings.TrimSpace(v) != "" {
+		cfg.Clearance.CfCookies = v
+	}
+	if v, ok := m["cf_clearance"].(string); ok && strings.TrimSpace(v) != "" {
+		cfg.Clearance.CfClearance = v
+	}
+	if v, ok := m["user_agent"].(string); ok && strings.TrimSpace(v) != "" {
+		cfg.Clearance.UserAgent = v
+	}
+	if v, ok := m["browser"].(string); ok && v != "" {
+		cfg.Clearance.Browser = v
+	}
+	if v, ok := m["flaresolverr_url"].(string); ok {
+		cfg.Clearance.FlaresolverrURL = v
+	}
+	if v, ok := number(m["timeout_sec"]); ok && v >= 1 {
+		cfg.Clearance.TimeoutSec = int(v)
+	}
+	if v, ok := number(m["refresh_interval"]); ok && v >= 60 {
+		cfg.Clearance.RefreshInterval = int(v)
+	}
+	if v, ok := m["warm_up_on_start"].(bool); ok {
+		cfg.Clearance.WarmUpOnStart = v
+	}
+}
+
+func number(value any) (float64, bool) {
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
+// stringSlice / intSlice 同时接受 JSON 解码产物（[]any）与 Go 原生切片，
+// 因为同一份数据可能来自 settings.json 反序列化，也可能来自服务端内部构造的 patch。
+func stringSlice(value any) ([]string, bool) {
+	switch v := value.(type) {
+	case []string:
+		return append([]string(nil), v...), true
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			if s, ok := item.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
+}
+
+func intSlice(value any) ([]int, bool) {
+	switch v := value.(type) {
+	case []int:
+		return append([]int(nil), v...), true
+	case []any:
+		out := make([]int, 0, len(v))
+		for _, item := range v {
+			if n, ok := number(item); ok {
+				out = append(out, int(n))
+			}
+		}
+		return out, true
+	default:
+		return nil, false
+	}
 }
 
 var watchOnce sync.Once
