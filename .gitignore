@@ -55,3 +55,9 @@ view-config.json
 
 # regiforge 运行数据（含 config.json/keys/debug/tasks，绝不入库）
 regiforge/data/
+
+# 本地运维脚本（含服务器 IP / 明文密码，绝不入库）
+.tmp-ssh/
+
+# 本地测试残留图片
+test_cat.png
