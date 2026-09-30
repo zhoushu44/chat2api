@@ -24,7 +24,7 @@ func (h *AccountsHandler) Register(r *gin.RouterGroup) {
 	r.DELETE("/accounts/:id", h.Delete)
 	r.GET("/accounts/stats", h.Stats)
 	r.POST("/accounts/check", h.Check)
-	// 账号清理：preview 只统计，run 真正删除（控制台「自动移除异常/额度耗尽账号」开关调用）
+	// 账号清理：preview 只统计，run 真正删除（控制台「自动移除异常/限流账号」开关调用）
 	r.POST("/accounts/cleanup/preview", h.CleanupPreview)
 	r.POST("/accounts/cleanup/run", h.CleanupRun)
 }
@@ -314,7 +314,9 @@ func (h *AccountsHandler) CleanupRun(c *gin.Context) { h.cleanup(c, false) }
 
 // cleanup 按开关统计/移除账号。
 // invalid：鉴权失效（status=失效 或 validity_status=invalid）。
-// rate_limited：远程明确确认图片额度为 0（!quota_unknown && quota==0）。
+// rate_limited：账号被标记为限流（status=限流）。
+// 注意：不能用 quota 判定——配额是导入时的快照，运行期从不刷新，
+// 健康账号同样是 quota=0/quota_unknown=false，据此会误删全部账号。
 // 同一账号只归入一个分类，避免重复计数。
 func (h *AccountsHandler) cleanup(c *gin.Context, dryRun bool) {
 	var req accountCleanupRequest
@@ -339,7 +341,7 @@ func (h *AccountsHandler) cleanup(c *gin.Context, dryRun bool) {
 				}
 				continue
 			}
-			if !a.QuotaUnknown && a.Quota == 0 && req.AutoRemoveRateLimited {
+			if a.Status == account.StatusLimited && req.AutoRemoveRateLimited {
 				result.RateLimited++
 				targets = append(targets, a)
 			}

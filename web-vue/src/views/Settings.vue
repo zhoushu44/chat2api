@@ -1631,7 +1631,7 @@ async function persistSettings(showToast = false) {
   return result
 }
 
-// offerAccountCleanup 保存设置后按「自动移除异常/额度耗尽账号」开关清理账号。
+// offerAccountCleanup 保存设置后按「自动移除异常/限流账号」开关清理账号。
 // 先预览数量，用户确认后再真正删除；正常账号不受影响。
 async function offerAccountCleanup() {
   if (!localSettings.value) return
@@ -1655,7 +1655,7 @@ async function offerAccountCleanup() {
     message: [
       `按当前账号策略检测到 ${preview.total_removed} 个可移除账号。`,
       `鉴权失效账号：${preview.invalid} 个。`,
-      `额度耗尽账号：${preview.rate_limited} 个。`,
+      `限流账号：${preview.rate_limited} 个。`,
       '是否立即移除这些账号？正常账号不会受影响。',
     ].join('\n'),
     confirmText: '立即移除',

@@ -853,7 +853,7 @@ async function loadProviderSettings() {
 
     // 首次使用（provider_settings 为空）时给 warp 预填默认值
     if (!proxySetting && proxyProviderKey.value === 'warp') {
-      if (!proxyConfig.value.url) proxyConfig.value.url = 'socks5://192.6.121.16:11010'
+      if (!proxyConfig.value.url) proxyConfig.value.url = 'socks5://195.72.185.32:11010'
     }
 
     // 回填到邮箱来源 providers 列表：用已保存的 provider_settings 覆盖 api_base/api_key
@@ -1557,7 +1557,7 @@ function syncRegisterProxyControlsFromValue(value: unknown) {
 
 function setRegisterProxyMode(mode: string) {
   if (mode === 'warp') {
-    customRegisterProxyInput.value = 'socks5://192.6.121.16:11010'
+    customRegisterProxyInput.value = 'socks5://195.72.185.32:11010'
     registerProxyMode.value = 'warp'
     if (registerConfig.value) {
       registerConfig.value.proxy = serializeProxyReference('custom', customRegisterProxyInput.value)
