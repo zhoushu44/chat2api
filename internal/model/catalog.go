@@ -23,6 +23,7 @@ var FallbackChatModels = []string{
 // FallbackImageModels 对等 Python FALLBACK_IMAGE_MODELS。
 var FallbackImageModels = []string{
 	"gpt-image-2",
+	"gpt-image-2.5",
 }
 
 // CodexImageModel codex 生图模型（对等 helper.CODEX_IMAGE_MODEL）。

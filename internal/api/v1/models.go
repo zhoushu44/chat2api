@@ -9,6 +9,7 @@ import (
 func HandleModels(c *gin.Context) {
 data := []gin.H{
 {"id": "gpt-image-2", "object": "model", "created": 0, "owned_by": "chatgpt2api"},
+{"id": "gpt-image-2.5", "object": "model", "created": 0, "owned_by": "chatgpt2api"},
 {"id": "codex-gpt-image-2", "object": "model", "created": 0, "owned_by": "chatgpt2api"},
 {"id": "gpt-4o", "object": "model", "created": 0, "owned_by": "chatgpt2api"},
 }

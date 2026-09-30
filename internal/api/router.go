@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/account"
 	"chatgpt2api/internal/api/admin"
@@ -15,6 +16,7 @@ import (
 	"chatgpt2api/internal/logsvc"
 	"chatgpt2api/internal/mailbox"
 	"chatgpt2api/internal/model"
+	"chatgpt2api/internal/monitor"
 	"chatgpt2api/internal/monitor/metrics"
 	"chatgpt2api/internal/prompt"
 	"chatgpt2api/internal/protocol"
@@ -52,6 +54,10 @@ type Server struct {
 	Sched *scheduler.Scheduler
 	// 控制台系统设置存储（<DataDir>/settings.json）
 	Settings *settings.Store
+	// Logs 页面运行日志（进程内环形缓冲，无落盘）
+	Runtime *logsvc.RuntimeService
+	// Monitor 页面实时事件（进程内发布/订阅）
+	Mon *monitor.Service
 }
 
 // dataDir 统一解析数据目录（Cfg 可能为 nil，此时回落到 ./data）。
@@ -100,6 +106,8 @@ func NewServer(cfg *config.Config) *Server {
 		Accounts: accountsSvc,
 		Pool:     pool,
 		LogSvc:   orch.Logger,
+		Runtime:  logsvc.NewRuntime(),
+		Mon:      monitor.New(5 * time.Minute),
 		Tasks:    task.New(dataDir),
 		Prompts:  prompt.New(),
 		Orch:     orch,
@@ -204,6 +212,13 @@ func (s *Server) NewRouter() *gin.Engine {
 	if s.Prompts != nil {
 		RegisterPrompts(adminGroup, s.Prompts)
 	}
+	// Logs / Gallery / Monitor 三个控制台页面（此前路由缺失 → 页面加载失败）
+	(&admin.LogsHandler{LogSvc: s.LogSvc, Runtime: s.Runtime, DataDir: s.dataDir()}).Register(adminGroup)
+	(&admin.GalleryHandler{DataDir: s.dataDir()}).Register(adminGroup)
+	monHandler := &admin.MonitorHandler{Mon: s.Mon, Metrics: s.Metrics}
+	monHandler.Register(adminGroup)
+	// 前端 uptime 直接请求 /public/uptime（无 /api 前缀、无鉴权，对等外部探活）
+	monHandler.RegisterPublic(r)
 	// P1.7 /api/dashboard（对等 Python system.py 该端点）
 	adminGroup.GET("/dashboard", s.handleDashboard)
 	// P0.4 静态 SPA（web_dist embed，此前从未生效）
@@ -363,7 +378,9 @@ func (s *Server) handleDashboard(c *gin.Context) {
 				acc["unknown_quota_count"] = acc["unknown_quota_count"].(int) + 1
 			} else if a.Quota < 0 {
 				acc["unlimited_quota_count"] = acc["unlimited_quota_count"].(int) + 1
-			} else {
+			} else if a.Available() {
+				// 只累计可用账号（非失效/限流/待授权）的额度：失效账号的图片额度已不可用，
+				// 计入会让「剩余额度」虚高。口径与 /api/image-tasks/quota 的 imageQuotaSummary 对齐。
 				acc["total_quota"] = acc["total_quota"].(int) + a.Quota
 			}
 			switch a.Status {

@@ -19,7 +19,7 @@ func TestFallbackModels(t *testing.T) {
 			t.Fatalf("stale model in fallback: %q", m)
 		}
 	}
-	if len(FallbackImageModels) != 1 || FallbackImageModels[0] != "gpt-image-2" {
+	if len(FallbackImageModels) != 2 || FallbackImageModels[0] != "gpt-image-2" || FallbackImageModels[1] != "gpt-image-2.5" {
 		t.Fatalf("fallback image models=%v", FallbackImageModels)
 	}
 }

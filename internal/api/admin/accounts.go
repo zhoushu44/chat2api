@@ -24,6 +24,9 @@ func (h *AccountsHandler) Register(r *gin.RouterGroup) {
 	r.DELETE("/accounts/:id", h.Delete)
 	r.GET("/accounts/stats", h.Stats)
 	r.POST("/accounts/check", h.Check)
+	// 账号清理：preview 只统计，run 真正删除（控制台「自动移除异常/额度耗尽账号」开关调用）
+	r.POST("/accounts/cleanup/preview", h.CleanupPreview)
+	r.POST("/accounts/cleanup/run", h.CleanupRun)
 }
 
 func (h *AccountsHandler) List(c *gin.Context) {
@@ -287,4 +290,79 @@ func (h *AccountsHandler) Delete(c *gin.Context) {
 		h.Pool.Remove(token)
 	}
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// accountCleanupRequest 账号清理请求，字段名与前端 settingsApi 一致。
+type accountCleanupRequest struct {
+	AutoRemoveInvalid     bool `json:"auto_remove_invalid_accounts"`
+	AutoRemoveRateLimited bool `json:"auto_remove_rate_limited_accounts"`
+}
+
+// accountCleanupResult 账号清理结果，字段名与前端 AccountCleanupResult 一致。
+type accountCleanupResult struct {
+	TotalRemoved  int      `json:"total_removed"`
+	Invalid       int      `json:"invalid"`
+	RateLimited   int      `json:"rate_limited"`
+	RemovedEmails []string `json:"removed_emails"`
+}
+
+// CleanupPreview 只统计匹配账号数量，不删除。
+func (h *AccountsHandler) CleanupPreview(c *gin.Context) { h.cleanup(c, true) }
+
+// CleanupRun 删除匹配账号（同步移出号池）。
+func (h *AccountsHandler) CleanupRun(c *gin.Context) { h.cleanup(c, false) }
+
+// cleanup 按开关统计/移除账号。
+// invalid：鉴权失效（status=失效 或 validity_status=invalid）。
+// rate_limited：远程明确确认图片额度为 0（!quota_unknown && quota==0）。
+// 同一账号只归入一个分类，避免重复计数。
+func (h *AccountsHandler) cleanup(c *gin.Context, dryRun bool) {
+	var req accountCleanupRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": "清理报文不是合法的 JSON 对象: " + err.Error(),
+			"type":    "invalid_request_error",
+		}})
+		return
+	}
+	result := accountCleanupResult{RemovedEmails: []string{}}
+	var targets []*account.Account
+	if h.Accounts != nil {
+		for _, a := range h.Accounts.List() {
+			if a == nil {
+				continue
+			}
+			if a.Status == account.StatusDisabled || a.ValidityStatus == "invalid" {
+				if req.AutoRemoveInvalid {
+					result.Invalid++
+					targets = append(targets, a)
+				}
+				continue
+			}
+			if !a.QuotaUnknown && a.Quota == 0 && req.AutoRemoveRateLimited {
+				result.RateLimited++
+				targets = append(targets, a)
+			}
+		}
+	}
+	result.TotalRemoved = len(targets)
+	for _, a := range targets {
+		if a.Email != "" {
+			result.RemovedEmails = append(result.RemovedEmails, a.Email)
+		}
+		if dryRun {
+			continue
+		}
+		if h.Pool != nil && a.Token != "" {
+			h.Pool.Remove(a.Token)
+		}
+		id := a.ID
+		if id == "" {
+			id = a.Email
+		}
+		if h.Accounts != nil && id != "" {
+			_ = h.Accounts.Delete(id)
+		}
+	}
+	c.JSON(http.StatusOK, result)
 }

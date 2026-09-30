@@ -8,6 +8,11 @@ accounts*.txt
 register.json
 localtest-config.json
 
+# === 环境变量（.env.example 是模板，保留）===
+.env
+.env.*
+!.env.example
+
 # === 本地二进制 / 备份 / 日志 ===
 *.exe
 *.exe~

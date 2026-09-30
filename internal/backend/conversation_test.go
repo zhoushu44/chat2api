@@ -15,6 +15,7 @@ func TestSplitImageModel(t *testing.T) {
 	}{
 		{"", "", ""},
 		{"gpt-image-2", "", "gpt-image-2"},
+		{"gpt-image-2.5", "", "gpt-image-2.5"},
 		{"GPT-IMAGE-2", "", "gpt-image-2"}, // 大小写归一
 		{" codex-gpt-image-2 ", "", "codex-gpt-image-2"},
 		{"plus-codex-gpt-image-2", "plus", "codex-gpt-image-2"},
@@ -35,6 +36,7 @@ func TestSplitImageModel(t *testing.T) {
 func TestImageModelSlug(t *testing.T) {
 	cases := map[string]string{
 		"gpt-image-2":              "gpt-5-3",
+		"gpt-image-2.5":            "gpt-5-3",
 		"codex-gpt-image-2":        "codex-gpt-image-2",
 		"plus-codex-gpt-image-2":   "codex-gpt-image-2",
 		"":                         "auto",

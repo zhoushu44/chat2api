@@ -19,7 +19,7 @@ const (
 
 // 模型映射常量（对等 utils/helper.py:21-22）。
 var (
-	BaseImageModels     = map[string]bool{"gpt-image-2": true, "codex-gpt-image-2": true}
+	BaseImageModels     = map[string]bool{"gpt-image-2": true, "gpt-image-2.5": true, "codex-gpt-image-2": true}
 	ImageModelPlanTypes = []string{"plus", "team", "pro"}
 )
 
@@ -190,13 +190,14 @@ func IsCodexImageModel(model string) bool {
 }
 
 // ImageModelSlug 标准图片模型名 → 底层 slug（对等 _image_model_slug:787-796）。
-// gpt-image-2 → gpt-5-3；codex-gpt-image-2 → 原样；其他 → auto。
+// gpt-image-2 / gpt-image-2.5 → gpt-5-3（同一 web 生图链路，2.5 由上游按最新版本出图）；
+// codex-gpt-image-2 → 原样；其他 → auto。
 func ImageModelSlug(model string) string {
 	_, base := SplitImageModel(model)
 	switch base {
 	case "":
 		return "auto"
-	case "gpt-image-2":
+	case "gpt-image-2", "gpt-image-2.5":
 		return "gpt-5-3"
 	case CodexImageModel:
 		return base

@@ -1631,6 +1631,46 @@ async function persistSettings(showToast = false) {
   return result
 }
 
+// offerAccountCleanup 保存设置后按「自动移除异常/额度耗尽账号」开关清理账号。
+// 先预览数量，用户确认后再真正删除；正常账号不受影响。
+async function offerAccountCleanup() {
+  if (!localSettings.value) return
+  const payload = {
+    auto_remove_invalid_accounts: Boolean(localSettings.value.auto_remove_invalid_accounts),
+    auto_remove_rate_limited_accounts: Boolean(localSettings.value.auto_remove_rate_limited_accounts),
+  }
+  if (!payload.auto_remove_invalid_accounts && !payload.auto_remove_rate_limited_accounts) return
+
+  let preview
+  try {
+    preview = await settingsApi.previewAccountCleanup(payload)
+  } catch (error: any) {
+    toast.warning(error.message || '账号清理检测失败')
+    return
+  }
+  if (!preview.total_removed) return
+
+  const confirmed = await confirmDialog.ask({
+    title: '检测到可移除账号',
+    message: [
+      `按当前账号策略检测到 ${preview.total_removed} 个可移除账号。`,
+      `鉴权失效账号：${preview.invalid} 个。`,
+      `额度耗尽账号：${preview.rate_limited} 个。`,
+      '是否立即移除这些账号？正常账号不会受影响。',
+    ].join('\n'),
+    confirmText: '立即移除',
+    cancelText: '稍后处理',
+  })
+  if (!confirmed) return
+
+  try {
+    const result = await settingsApi.runAccountCleanup(payload)
+    toast.success(`账号清理完成：移除 ${result.total_removed} 个账号`)
+  } catch (error: any) {
+    toast.error(error.message || '账号清理失败')
+  }
+}
+
 async function testImageStorageConnection() {
   if (!requireSavedSettings('测试 WebDAV')) return
   const confirmed = await confirmDialog.ask({
@@ -2100,6 +2140,7 @@ const handleSave = async () => {
 
   try {
     await persistSettings(true)
+    await offerAccountCleanup()
   } catch (error: any) {
     toast.error(error.message || '保存失败')
   } finally {

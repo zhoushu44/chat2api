@@ -284,7 +284,8 @@ function backendStatusToFrontend(item: BackendAccount): Pick<
   const imageQuotaUnknown = Boolean(item.image_quota_unknown)
   const lastRefreshError = cleanString(item.last_refresh_error || item.last_token_refresh_error)
 
-  if (rawStatus === STATUS_DISABLED || rawStatus.toLowerCase() === 'disabled') {
+  // 后端自动验活/除名写入的是「失效」（internal/account.StatusDisabled），需同样按禁用处理
+  if (rawStatus === STATUS_DISABLED || rawStatus === '失效' || rawStatus.toLowerCase() === 'disabled') {
     return {
       enabled: false,
       status: 'disabled',

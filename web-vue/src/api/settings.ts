@@ -45,6 +45,18 @@ export interface BackupRunResult {
   encrypted: boolean
 }
 
+export interface AccountCleanupRequest {
+  auto_remove_invalid_accounts: boolean
+  auto_remove_rate_limited_accounts: boolean
+}
+
+export interface AccountCleanupResult {
+  total_removed: number
+  invalid: number
+  rate_limited: number
+  removed_emails?: string[]
+}
+
 export type ThirdPartyAppsSettings = Settings['third_party_apps']
 
 const DEFAULT_PROXY_RUNTIME_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36'
@@ -349,4 +361,10 @@ export const settingsApi = {
 
   syncImageStorage: () =>
     apiClient.post<Record<string, never>, { result: ImageStorageSyncResult }>('/api/image-storage/sync', {}),
+
+  previewAccountCleanup: (payload: AccountCleanupRequest) =>
+    apiClient.post<AccountCleanupRequest, AccountCleanupResult>('/api/accounts/cleanup/preview', payload),
+
+  runAccountCleanup: (payload: AccountCleanupRequest) =>
+    apiClient.post<AccountCleanupRequest, AccountCleanupResult>('/api/accounts/cleanup/run', payload),
 }
