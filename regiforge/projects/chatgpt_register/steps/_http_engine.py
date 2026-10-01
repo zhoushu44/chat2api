@@ -34,6 +34,10 @@ try:
 except Exception:  # pragma: no cover
     _build_first_v8 = None
 
+# 设密码前的首段等码只用于探测「是否已有旧 OTP」以便后续跳过，不作为实际验证码。
+# 设密码会切换流程使旧码立即失效，故不值得空等整个 mail_timeout，用短超时探测即可。
+_FIRST_CODE_GRACE_S = 20.0
+
 
 def _egress_log_path() -> Path:
     """出口观测日志：data/keys/chatgpt_register/egress.jsonl（与 accounts.jsonl 同目录）。"""
@@ -1033,10 +1037,14 @@ def _register_sync(
     log("[5/9] 邮箱验证码...")
     t0 = time.time()
     password_set = False
-    first_code = wait_code_sync(email)
+    # 短探测：只捞「OAuth 落地 email-verification 时可能已自动发出的旧 OTP」，
+    # 仅用于后续 skip 集合。设密码会切流程使旧码失效，故不值得空等整个 mail_timeout
+    # （旧逻辑在此阻塞 180s，超时还会触发 provider release 邮箱 → D0004）。
+    first_code = wait_code_sync(email, timeout=_FIRST_CODE_GRACE_S)
     if not first_code:
         # 邮箱没自动发码不一定是死路：密码注册流程本身会主动发码
         first_code = ""
+        log(f"  首段未捞到旧 OTP（探测 {_FIRST_CODE_GRACE_S:.0f}s），直接设密码后主动发码")
     pw_ok, token, so_token = _register_password(
         session, email=email, password=password, device_id=oai_did, fp=fp, proxy_url=proxy_url, log=log
     )
@@ -1268,11 +1276,18 @@ async def register_http(
 
     loop = asyncio.get_running_loop()
 
-    def wait_code_sync(addr: str, *, skip_codes: set[str] | None = None) -> str | None:
+    def wait_code_sync(
+        addr: str,
+        *,
+        skip_codes: set[str] | None = None,
+        timeout: float | None = None,
+    ) -> str | None:
         # 密码注册切流程后需要"跳过旧码等新码"：透传 skip_codes 给 provider，
         # 一次长轮询（mail_timeout）内过滤旧邮件，避免拆多次短轮询导致
         # provider 每次超时自动 release_email 释放邮箱。
-        kwargs: dict[str, Any] = {"timeout": mail_timeout}
+        # timeout 可覆盖（设密码前的首段探测用短超时，不空等整个 mail_timeout）。
+        eff_timeout = float(timeout) if timeout is not None else mail_timeout
+        kwargs: dict[str, Any] = {"timeout": eff_timeout}
         if skip_codes:
             kwargs["skip_codes"] = skip_codes
         try:
@@ -1281,7 +1296,7 @@ async def register_http(
             coro = wait_code(addr)
         fut = asyncio.run_coroutine_threadsafe(coro, loop)
         try:
-            return fut.result(timeout=max(30.0, mail_timeout + 30.0))
+            return fut.result(timeout=max(30.0, eff_timeout + 30.0))
         except Exception as exc:
             _log(f"  收码失败: {exc}")
             return None
