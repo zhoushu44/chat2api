@@ -156,6 +156,19 @@ func (c *ImageGenerationConfig) MarkExplicit() {
 	}
 }
 
+// SuperResolutionConfig 图片超分（腾讯云 COS 数据万象 AISuperResolution）。
+// 功能化设计：整段仅被 internal/superres 与生图 handler 消费，
+// 删除功能时移除本段 + applySuperResolution + seed 行即可，无其他引用。
+type SuperResolutionConfig struct {
+	Enabled        bool   `json:"enabled"`
+	SecretID       string `json:"secret_id"`
+	SecretKey      string `json:"secret_key"`
+	Bucket         string `json:"bucket"`
+	Region         string `json:"region"`
+	PublicBaseURL  string `json:"public_base_url"`
+	UploadEndpoint string `json:"upload_endpoint"`
+}
+
 // QuotaLimitsConfig 配额上限（对等 quota_limits；-1 不限；强制执行未实现，配置透传）。
 type QuotaLimitsConfig struct {
 	Enabled           bool `json:"enabled"`
@@ -199,6 +212,7 @@ type Config struct {
 	AIReview            AIReviewConfig            `json:"ai_review"`
 	Backup              BackupConfig              `json:"backup"`
 	ImageGeneration     ImageGenerationConfig     `json:"image_generation"`
+	SuperResolution     SuperResolutionConfig     `json:"super_resolution"`
 	QuotaLimits         QuotaLimitsConfig         `json:"quota_limits"`
 }
 
@@ -325,6 +339,28 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("DAILY_401_CHECK_ENABLED"); v != "" {
 		cfg.Scheduler.Enabled = v != "0" && v != "false" && v != "no" && v != "off"
 	}
+	// 图片超分环境变量（SUPERRES_*；对齐 .env.example 文档，功能化可整体摘除）
+	if v := os.Getenv("SUPERRES_ENABLED"); v != "" {
+		cfg.SuperResolution.Enabled = v != "0" && v != "false" && v != "no" && v != "off"
+	}
+	if v := os.Getenv("SUPERRES_SECRET_ID"); v != "" {
+		cfg.SuperResolution.SecretID = v
+	}
+	if v := os.Getenv("SUPERRES_SECRET_KEY"); v != "" {
+		cfg.SuperResolution.SecretKey = v
+	}
+	if v := os.Getenv("SUPERRES_BUCKET"); v != "" {
+		cfg.SuperResolution.Bucket = v
+	}
+	if v := os.Getenv("SUPERRES_REGION"); v != "" {
+		cfg.SuperResolution.Region = v
+	}
+	if v := os.Getenv("SUPERRES_PUBLIC_BASE_URL"); v != "" {
+		cfg.SuperResolution.PublicBaseURL = v
+	}
+	if v := os.Getenv("SUPERRES_UPLOAD_ENDPOINT"); v != "" {
+		cfg.SuperResolution.UploadEndpoint = v
+	}
 	if v := os.Getenv("DAILY_401_CHECK_HOUR"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Scheduler.Hour = n
@@ -390,6 +426,9 @@ func applyOverrides(cfg *Config, over map[string]any) {
 	if m, ok := over["image_generation"].(map[string]any); ok {
 		applyImageGeneration(cfg, m)
 	}
+	if m, ok := over["super_resolution"].(map[string]any); ok {
+		applySuperResolution(cfg, m)
+	}
 	if m, ok := over["proxy_runtime"].(map[string]any); ok {
 		applyProxyRuntime(cfg, m)
 	}
@@ -430,6 +469,9 @@ func ApplyRuntime(patch map[string]any) {
 	if m, ok := patch["clearance"].(map[string]any); ok {
 		applyClearance(cfg, m)
 	}
+	if m, ok := patch["super_resolution"].(map[string]any); ok {
+		applySuperResolution(cfg, m)
+	}
 }
 
 func applyImageGeneration(cfg *Config, m map[string]any) {
@@ -442,6 +484,33 @@ func applyImageGeneration(cfg *Config, m map[string]any) {
 	}
 	if v, ok := m["output_format"].(string); ok && v != "" {
 		cfg.ImageGeneration.OutputFormat = v
+	}
+}
+
+// applySuperResolution 超分段热更（对等 applyImageGeneration 的形状约定）。
+// secret_key 留空表示沿用已保存值（对等 clearance.cf_cookies 的语义，不清除）。
+func applySuperResolution(cfg *Config, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		cfg.SuperResolution.Enabled = v
+	}
+	if v, ok := m["secret_id"].(string); ok {
+		cfg.SuperResolution.SecretID = strings.TrimSpace(v)
+	}
+	// 凭证类：留空保持不变（避免面板整存把已存密钥冲成空）
+	if v, ok := m["secret_key"].(string); ok && strings.TrimSpace(v) != "" {
+		cfg.SuperResolution.SecretKey = strings.TrimSpace(v)
+	}
+	if v, ok := m["bucket"].(string); ok {
+		cfg.SuperResolution.Bucket = strings.TrimSpace(v)
+	}
+	if v, ok := m["region"].(string); ok {
+		cfg.SuperResolution.Region = strings.TrimSpace(v)
+	}
+	if v, ok := m["public_base_url"].(string); ok {
+		cfg.SuperResolution.PublicBaseURL = strings.TrimSpace(v)
+	}
+	if v, ok := m["upload_endpoint"].(string); ok {
+		cfg.SuperResolution.UploadEndpoint = strings.TrimSpace(v)
 	}
 }
 

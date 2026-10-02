@@ -6,6 +6,7 @@ import (
 
 	"chatgpt2api/internal/backend/failure"
 	"chatgpt2api/internal/protocol"
+	"chatgpt2api/internal/superres"
 
 	"github.com/gin-gonic/gin"
 )
@@ -48,8 +49,10 @@ func HandleGenerationsWith(c *gin.Context, orch *protocol.Orchestrator) {
 	if quality == "" {
 		quality = "auto"
 	}
+	// 图片超分（功能化接线 1/3）：2K/4K 且设置开启时接管，源图尺寸降档生成
+	srPlan := superres.PlanFromRequest(req.Size)
 	res, err := orch.Generate(c.Request.Context(), protocol.GenerateRequest{
-		Prompt: protocol.BuildImagePrompt(req.Prompt, req.Size, quality), Model: req.Model, N: req.N,
+		Prompt: protocol.BuildImagePrompt(req.Prompt, superres.SizeOr(srPlan, req.Size), quality), Model: req.Model, N: req.N,
 	})
 	if err != nil {
 		// 失败分类统一映射：本地输入错误 400（不换号不冷却），上游错误 502（换号冷却）。
@@ -68,13 +71,23 @@ func HandleGenerationsWith(c *gin.Context, orch *protocol.Orchestrator) {
 	data := make([]gin.H, 0, req.N)
 	for i := 0; i < req.N; i++ {
 		item := gin.H{"revised_prompt": req.Prompt}
-		if req.ResponseFormat == "url" {
-			if i < len(res.URLs) {
-				item["url"] = res.URLs[i]
+		// 图片超分（功能化接线 2/3）：增强成功 → url 形态；失败 → 原图 b64/降级
+		srDone := false
+		if srPlan != nil && i < len(res.B64) {
+			if out := superres.ApplyB64(c.Request.Context(), srPlan, res.B64[i]); out.IsURL() {
+				item["url"] = out.URL()
+				srDone = true
 			}
-		} else {
-			if i < len(res.B64) {
-				item["b64_json"] = string(res.B64[i])
+		}
+		if !srDone {
+			if req.ResponseFormat == "url" {
+				if i < len(res.URLs) {
+					item["url"] = res.URLs[i]
+				}
+			} else {
+				if i < len(res.B64) {
+					item["b64_json"] = string(res.B64[i])
+				}
 			}
 		}
 		data = append(data, item)

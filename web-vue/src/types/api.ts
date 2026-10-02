@@ -96,6 +96,16 @@ export interface Settings {
     nanobanana_lane?: 'fast' | 'thinking' | 'pro'
     nanobanana_lane_order?: Array<'fast' | 'thinking' | 'pro'>
   }
+  super_resolution?: {
+    enabled: boolean
+    secret_id: string
+    secret_key: string
+    has_secret_key?: boolean
+    bucket: string
+    region: string
+    public_base_url: string
+    upload_endpoint: string
+  }
   model_catalog?: {
     models?: Array<{
       name: string

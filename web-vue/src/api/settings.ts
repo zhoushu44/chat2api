@@ -137,6 +137,20 @@ export function normalizeProxyRuntime(raw: unknown): ProxyRuntimeSettings {
   }
 }
 
+export function normalizeSuperResolution(raw: unknown): NonNullable<Settings['super_resolution']> {
+  const source = raw && typeof raw === 'object' ? raw as RawSettings : {}
+  return {
+    enabled: boolValue(source.enabled, false),
+    secret_id: cleanString(source.secret_id),
+    secret_key: cleanString(source.secret_key),
+    has_secret_key: boolValue(source.has_secret_key, false),
+    bucket: cleanString(source.bucket),
+    region: cleanString(source.region),
+    public_base_url: cleanString(source.public_base_url),
+    upload_endpoint: cleanString(source.upload_endpoint),
+  }
+}
+
 export function normalizeSettings(raw: RawSettings | null | undefined): Settings {
   const source = { ...(raw || {}) }
   const basic = source.basic && typeof source.basic === 'object' ? source.basic : {}
@@ -147,6 +161,7 @@ export function normalizeSettings(raw: RawSettings | null | undefined): Settings
   const backupInclude = backup.include && typeof backup.include === 'object' ? backup.include : {}
   const thirdPartyApps = normalizeThirdPartyApps(source.third_party_apps)
   const proxyRuntime = normalizeProxyRuntime(source.proxy_runtime)
+  const superResolution = normalizeSuperResolution(source.super_resolution)
 
   const normalized = {
     ...source,
@@ -203,6 +218,7 @@ export function normalizeSettings(raw: RawSettings | null | undefined): Settings
         ? source.image_generation.nanobanana_lane_order
         : ['fast'],
     },
+    super_resolution: superResolution,
     quota_limits: {
       enabled: boolValue(source.quota_limits?.enabled, true),
       fast_daily_limit: numberValue(source.quota_limits?.fast_daily_limit, -1),
@@ -272,6 +288,7 @@ function toBackendSettings(settings: Settings): RawSettings {
   const payload: RawSettings = cloneRawSettings(normalized)
   payload.proxy = cleanString(normalized.proxy)
   payload.proxy_runtime = normalizeProxyRuntime(normalized.proxy_runtime)
+  payload.super_resolution = normalizeSuperResolution(normalized.super_resolution)
   payload.base_url = cleanString(normalized.base_url)
   payload.image_retention_days = numberValue(
     normalized.image_retention_days,

@@ -111,6 +111,11 @@ func applyRuntime(data map[string]any) []string {
 		patch["proxy_runtime"] = proxyRuntime
 		applied = append(applied, "proxy_runtime")
 	}
+	// 图片超分（腾讯数据万象）：凭证/开关均支持运行时替换（client 按指纹惰性重建）
+	if sr, ok := data["super_resolution"].(map[string]any); ok {
+		patch["super_resolution"] = sr
+		applied = append(applied, "super_resolution")
+	}
 	config.ApplyRuntime(patch)
 	return applied
 }
@@ -145,6 +150,16 @@ func seedFromConfig(cfg *config.Config) settings.Data {
 			"enabled":          cfg.ImageGeneration.Enabled,
 			"supported_models": cfg.ImageGeneration.SupportedModels,
 			"output_format":    cfg.ImageGeneration.OutputFormat,
+		},
+		"super_resolution": map[string]any{
+			"enabled":          cfg.SuperResolution.Enabled,
+			"secret_id":        cfg.SuperResolution.SecretID,
+			"secret_key":       "",
+			"has_secret_key":   cfg.SuperResolution.SecretKey != "",
+			"bucket":           cfg.SuperResolution.Bucket,
+			"region":           cfg.SuperResolution.Region,
+			"public_base_url":  cfg.SuperResolution.PublicBaseURL,
+			"upload_endpoint":  cfg.SuperResolution.UploadEndpoint,
 		},
 		"image_storage": map[string]any{
 			"enabled":          cfg.ImageStorage.Enabled,

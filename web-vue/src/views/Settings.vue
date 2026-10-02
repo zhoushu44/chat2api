@@ -475,6 +475,60 @@
             ></textarea>
           </FormField>
         </FormSection>
+
+        <!-- 图片超分（功能化区块：删除功能时整块移除即可） -->
+        <FormSection
+          title="图片超分（腾讯数据万象）"
+          subtitle="生成接口 size 填 2k / 4k（或 2048 以上自定义尺寸）时按 1/2、1/4 源图生成，再经腾讯云 AI 超分返回成品公网 URL；失败自动降级为原图。"
+        >
+          <div class="settings-check-grid settings-check-grid--single">
+            <div class="settings-check-item">
+              <Checkbox v-model="localSettings.super_resolution!.enabled">启用图片超分</Checkbox>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            <FormField label="Secret ID">
+              <Input v-model.trim="localSettings.super_resolution!.secret_id" block placeholder="腾讯云访问凭证 SecretId" />
+            </FormField>
+
+            <FormField label="Secret Key">
+              <Input
+                v-model="localSettings.super_resolution!.secret_key"
+                type="password"
+                block
+                :placeholder="localSettings.super_resolution!.has_secret_key ? '已保存，留空则沿用' : '腾讯云访问凭证 SecretKey'"
+              />
+            </FormField>
+          </div>
+
+          <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            <FormField label="Bucket">
+              <Input v-model.trim="localSettings.super_resolution!.bucket" block placeholder="bucket-name-1250000000" />
+            </FormField>
+
+            <FormField label="地域">
+              <Input v-model.trim="localSettings.super_resolution!.region" block placeholder="ap-guangzhou" />
+            </FormField>
+          </div>
+
+          <FormField label="成品公网前缀">
+            <Input
+              v-model.trim="localSettings.super_resolution!.public_base_url"
+              block
+              placeholder="https://bucket-name-1250000000.cos.ap-guangzhou.myqcloud.com"
+            />
+            <p class="mt-1 text-xs text-muted-foreground">返回给调用方的 COS 成品地址前缀，需与 Bucket / 地域一致且公网可读。</p>
+          </FormField>
+
+          <FormField label="上传端点（可选）">
+            <Input
+              v-model.trim="localSettings.super_resolution!.upload_endpoint"
+              block
+              placeholder="留空使用默认；全球加速填 cos.accelerate.myqcloud.com"
+            />
+          </FormField>
+        </FormSection>
       </div>
 
       <div v-else-if="activeSettingsTab === 'backup'" class="space-y-4">
