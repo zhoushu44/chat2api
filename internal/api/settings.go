@@ -160,6 +160,8 @@ func seedFromConfig(cfg *config.Config) settings.Data {
 			"region":           cfg.SuperResolution.Region,
 			"public_base_url":  cfg.SuperResolution.PublicBaseURL,
 			"upload_endpoint":  cfg.SuperResolution.UploadEndpoint,
+			"compress":         cfg.SuperResolution.OutputFormat != "",
+			"output_quality":   cfg.SuperResolution.OutputQuality,
 		},
 		"image_storage": map[string]any{
 			"enabled":          cfg.ImageStorage.Enabled,

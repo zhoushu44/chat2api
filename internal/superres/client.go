@@ -166,10 +166,11 @@ func normalizeOutputFormat(s string) string {
 	}
 }
 
-// outputQuality 转码质量（默认 85；范围外收敛到 60~95）。
+// outputQuality 转码质量（默认 90 视觉无损档；范围外收敛到 60~95）。
+// 90：4K 约 3~4MB，放大对比原 PNG 无可见差异。
 func (c *Config) outputQuality() int {
 	if c.OutputQuality < 60 || c.OutputQuality > 95 {
-		return 85
+		return 90
 	}
 	return c.OutputQuality
 }

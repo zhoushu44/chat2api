@@ -148,6 +148,8 @@ export function normalizeSuperResolution(raw: unknown): NonNullable<Settings['su
     region: cleanString(source.region),
     public_base_url: cleanString(source.public_base_url),
     upload_endpoint: cleanString(source.upload_endpoint),
+    compress: boolValue(source.compress, false),
+    output_quality: numberValue(source.output_quality, 90),
   }
 }
 
