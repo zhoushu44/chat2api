@@ -167,6 +167,10 @@ type SuperResolutionConfig struct {
 	Region         string `json:"region"`
 	PublicBaseURL  string `json:"public_base_url"`
 	UploadEndpoint string `json:"upload_endpoint"`
+	// 输出转码（可选）：webp / jpeg；空 = 保持无损 PNG。
+	OutputFormat string `json:"output_format"`
+	// 转码质量 60~95（默认 85）。
+	OutputQuality int `json:"output_quality"`
 }
 
 // QuotaLimitsConfig 配额上限（对等 quota_limits；-1 不限；强制执行未实现，配置透传）。
@@ -361,6 +365,14 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("SUPERRES_UPLOAD_ENDPOINT"); v != "" {
 		cfg.SuperResolution.UploadEndpoint = v
 	}
+	if v := os.Getenv("SUPERRES_OUTPUT_FORMAT"); v != "" {
+		cfg.SuperResolution.OutputFormat = v
+	}
+	if v := os.Getenv("SUPERRES_OUTPUT_QUALITY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			cfg.SuperResolution.OutputQuality = n
+		}
+	}
 	if v := os.Getenv("DAILY_401_CHECK_HOUR"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Scheduler.Hour = n
@@ -511,6 +523,12 @@ func applySuperResolution(cfg *Config, m map[string]any) {
 	}
 	if v, ok := m["upload_endpoint"].(string); ok {
 		cfg.SuperResolution.UploadEndpoint = strings.TrimSpace(v)
+	}
+	if v, ok := m["output_format"].(string); ok {
+		cfg.SuperResolution.OutputFormat = strings.TrimSpace(v)
+	}
+	if v, ok := m["output_quality"].(float64); ok {
+		cfg.SuperResolution.OutputQuality = int(v)
 	}
 }
 

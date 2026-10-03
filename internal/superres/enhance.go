@@ -18,6 +18,11 @@ type Config struct {
 	Region        string // COS 地域，如 ap-guangzhou
 	PublicBaseURL string // 成品公网前缀，如 https://bucket-appid.cos.ap-guangzhou.myqcloud.com
 	UploadEndpoint string // 可选上传端点（全球加速），如 cos.accelerate.myqcloud.com
+	// OutputFormat 可选输出转码：webp / jpeg（空或 png = 保持无损 PNG）。
+	// 4K 无损 PNG 单张 15~25MB，转 webp q85 约 1~2MB（实测 24MB→1.15MB）。
+	OutputFormat string
+	// OutputQuality 转码质量 60~95（默认 85，仅 OutputFormat 非空时生效）。
+	OutputQuality int
 }
 
 // Ready 配置是否满足超分执行条件（全部凭证齐备）。

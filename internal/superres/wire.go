@@ -33,6 +33,8 @@ func FromConfig() *Config {
 		Region:         sr.Region,
 		PublicBaseURL:  sr.PublicBaseURL,
 		UploadEndpoint: sr.UploadEndpoint,
+		OutputFormat:   sr.OutputFormat,
+		OutputQuality:  sr.OutputQuality,
 	}
 }
 
