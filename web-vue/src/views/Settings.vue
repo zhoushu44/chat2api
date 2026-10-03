@@ -485,6 +485,23 @@
             <div class="settings-check-item">
               <Checkbox v-model="localSettings.super_resolution!.enabled">启用图片超分</Checkbox>
             </div>
+            <div class="settings-check-item">
+              <Checkbox v-model="localSettings.super_resolution!.compress">压缩成品（JPEG）</Checkbox>
+            </div>
+          </div>
+
+          <div v-if="localSettings.super_resolution!.compress" class="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+            <FormField label="压缩质量">
+              <select
+                v-model.number="localSettings.super_resolution!.output_quality"
+                class="w-full rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground"
+              >
+                <option :value="85">85（4K 约 2~3MB）</option>
+                <option :value="90">90（4K 约 3~4MB，视觉无损）</option>
+                <option :value="96">96（4K 约 5MB，最高质量）</option>
+              </select>
+              <p class="mt-1 text-xs text-muted-foreground">不勾选压缩则返回无损 PNG（4K 约 15~25MB）；JPEG 全平台兼容。</p>
+            </FormField>
           </div>
 
           <div class="grid grid-cols-1 gap-2.5 md:grid-cols-2">

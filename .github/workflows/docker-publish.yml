@@ -10,8 +10,8 @@ on:
 
 env:
   IMAGE: zhoushu1/chat2api
-  # 大版本号：升级时只改这一行，自动同步 16.0 + latest 双标签
-  TAG_MAJOR: "16.0"
+  # 大版本号：升级时只改这一行，自动同步 17.0 + latest 双标签
+  TAG_MAJOR: "17.0"
 
 jobs:
   build-and-push:
@@ -29,7 +29,7 @@ jobs:
       - name: 设置 Buildx（docker-container driver，支持 GHA 缓存）
         uses: docker/setup-buildx-action@v3
 
-      - name: 构建并推送镜像（16.0 + latest 同一镜像）
+      - name: 构建并推送镜像（17.0 + latest 同一镜像）
         uses: docker/build-push-action@v6
         with:
           context: .

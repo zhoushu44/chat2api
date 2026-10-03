@@ -23,23 +23,36 @@ func TestNormalizeOutputFormat(t *testing.T) {
 	}
 }
 
-// TestOutputQuality 质量参数收敛（默认 85，越界收敛）。
+// TestOutputQuality 质量参数收敛（默认 90，越界收敛）。
 func TestOutputQuality(t *testing.T) {
 	cases := []struct {
 		in   int
 		want int
 	}{
-		{0, 85},   // 未设置 → 默认
-		{85, 85},  // 常规
+		{0, 90},   // 未设置 → 默认
+		{90, 90},  // 常规
+		{85, 85},  // 显式低档
 		{60, 60},  // 下边界
 		{95, 95},  // 上边界
-		{10, 85},  // 过低 → 默认
-		{100, 85}, // 过高 → 默认
+		{10, 90},  // 过低 → 默认
+		{100, 90}, // 过高 → 默认
 	}
 	for _, c := range cases {
 		cfg := &Config{OutputQuality: c.in}
 		if got := cfg.outputQuality(); got != c.want {
 			t.Errorf("outputQuality(in=%d) = %d, want %d", c.in, got, c.want)
 		}
+	}
+}
+
+// TestCompressToggle 勾选框语义：compress=true → jpeg；false → 清空。
+func TestCompressToggle(t *testing.T) {
+	// normalizeOutputFormat 对 jpeg 的映射（config 侧 applySuperResolution 直接写 "jpeg"）
+	if got := normalizeOutputFormat("jpeg"); got != "jpeg" {
+		t.Fatalf("jpeg normalize = %q", got)
+	}
+	// 空 = 不转码（无损 PNG）
+	if got := normalizeOutputFormat(""); got != "" {
+		t.Fatalf("empty normalize = %q", got)
 	}
 }

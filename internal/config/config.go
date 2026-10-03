@@ -524,7 +524,15 @@ func applySuperResolution(cfg *Config, m map[string]any) {
 	if v, ok := m["upload_endpoint"].(string); ok {
 		cfg.SuperResolution.UploadEndpoint = strings.TrimSpace(v)
 	}
-	if v, ok := m["output_format"].(string); ok {
+	// 压缩勾选框：勾选 = JPEG 转码；不勾 = 无损 PNG（清空 output_format）。
+	if v, ok := m["compress"].(bool); ok {
+		if v {
+			cfg.SuperResolution.OutputFormat = "jpeg"
+		} else {
+			cfg.SuperResolution.OutputFormat = ""
+		}
+	} else if v, ok := m["output_format"].(string); ok {
+		// 兼容直接传 output_format 的调用方（API/脚本）
 		cfg.SuperResolution.OutputFormat = strings.TrimSpace(v)
 	}
 	if v, ok := m["output_quality"].(float64); ok {

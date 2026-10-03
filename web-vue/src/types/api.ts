@@ -105,6 +105,10 @@ export interface Settings {
     region: string
     public_base_url: string
     upload_endpoint: string
+    /** 勾选后成品转 JPEG（全兼容，4K 约 2~5MB）；不勾返回无损 PNG（4K 约 15~25MB） */
+    compress?: boolean
+    /** JPEG 质量 85/90/96（默认 90，仅 compress 勾选时生效） */
+    output_quality?: number
   }
   model_catalog?: {
     models?: Array<{
