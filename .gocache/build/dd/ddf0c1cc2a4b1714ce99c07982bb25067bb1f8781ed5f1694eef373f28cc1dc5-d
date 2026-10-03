@@ -1,0 +1,16 @@
+./ai.go
+./app.go
+./auth_panel.go
+./auth_users.go
+./errors.go
+./image_tasks.go
+./mailbox.go
+./prompts.go
+./provider_conn.go
+./providers.go
+./proxy_nodes.go
+./register.go
+./router.go
+./settings.go
+./static.go
+./support.go

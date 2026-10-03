@@ -1,0 +1,9 @@
+./client.go
+./client_options.go
+./connect.go
+./ja3.go
+./jar.go
+./logger.go
+./mapper.go
+./pinner.go
+./roundtripper.go

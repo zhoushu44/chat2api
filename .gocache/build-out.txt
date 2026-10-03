@@ -1,0 +1,83 @@
+
+> chatgpt2api-console@2.1.1 build
+> npm run clean:dist && vite build && npm run sync
+
+
+> chatgpt2api-console@2.1.1 clean:dist
+> node -e "require('fs').rmSync('dist',{recursive:true,force:true})"
+
+[36mvite v7.3.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+Browserslist: browsers data (caniuse-lite) is 6 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme
+[32m✓[39m 305 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                                                                     [39m[1m[2m  0.53 kB[22m[1m[22m[2m │ gzip:  0.33 kB[22m
+[2mdist/[22m[35massets/AppShell-rFnY937K.css                                                   [39m[1m[2m  0.50 kB[22m[1m[22m[2m │ gzip:  0.29 kB[22m
+[2mdist/[22m[35massets/Monitor-CNbHLqE6.css                                                    [39m[1m[2m  0.55 kB[22m[1m[22m[2m │ gzip:  0.27 kB[22m
+[2mdist/[22m[35massets/Settings-CCfdsMzy.css                                                   [39m[1m[2m  0.77 kB[22m[1m[22m[2m │ gzip:  0.35 kB[22m
+[2mdist/[22m[35massets/Logs-DznRpFr_.css                                                       [39m[1m[2m  1.05 kB[22m[1m[22m[2m │ gzip:  0.46 kB[22m
+[2mdist/[22m[35massets/Accounts-DbDq6TPF.css                                                   [39m[1m[2m  1.14 kB[22m[1m[22m[2m │ gzip:  0.37 kB[22m
+[2mdist/[22m[35massets/Gallery-D3BofrDV.css                                                    [39m[1m[2m  1.52 kB[22m[1m[22m[2m │ gzip:  0.53 kB[22m
+[2mdist/[22m[35massets/DebugCenter-DjvdngRO.css                                                [39m[1m[2m  2.00 kB[22m[1m[22m[2m │ gzip:  0.61 kB[22m
+[2mdist/[22m[35massets/Register-Bj0vNiu-.css                                                   [39m[1m[2m  5.72 kB[22m[1m[22m[2m │ gzip:  1.30 kB[22m
+[2mdist/[22m[35massets/ImageTasks-B_jrkOCH.css                                                 [39m[1m[2m 19.76 kB[22m[1m[22m[2m │ gzip:  3.69 kB[22m
+[2mdist/[22m[35massets/TableShell-C_wpzQrC.css                                                 [39m[1m[2m 37.40 kB[22m[1m[22m[2m │ gzip:  6.69 kB[22m
+[2mdist/[22m[35massets/index-C7avRLqI.css                                                      [39m[1m[2m 62.76 kB[22m[1m[22m[2m │ gzip: 11.53 kB[22m
+[2mdist/[22m[36massets/TableShell.vue_vue_type_style_index_0_scoped_508ba6a3_lang-Bnmz2l_B.js  [39m[1m[2m  0.09 kB[22m[1m[22m[2m │ gzip:  0.10 kB[22m
+[2mdist/[22m[36massets/menuItems-B0NEqZaT.js                                                   [39m[1m[2m  0.15 kB[22m[1m[22m[2m │ gzip:  0.14 kB[22m
+[2mdist/[22m[36massets/monitor-DP765I04.js                                                     [39m[1m[2m  0.18 kB[22m[1m[22m[2m │ gzip:  0.16 kB[22m
+[2mdist/[22m[36massets/CodeBlock-DJqmN__B.js                                                   [39m[1m[2m  0.37 kB[22m[1m[22m[2m │ gzip:  0.30 kB[22m
+[2mdist/[22m[36massets/ModalBody-C8mlKmS3.js                                                   [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:  0.33 kB[22m
+[2mdist/[22m[36massets/PagePanel-DP2a2k0n.js                                                   [39m[1m[2m  0.43 kB[22m[1m[22m[2m │ gzip:  0.33 kB[22m
+[2mdist/[22m[36massets/useConfirmDialog-D9XfI4fx.js                                            [39m[1m[2m  0.44 kB[22m[1m[22m[2m │ gzip:  0.30 kB[22m
+[2mdist/[22m[36massets/StateBadge-CNQ2Begj.js                                                  [39m[1m[2m  0.62 kB[22m[1m[22m[2m │ gzip:  0.39 kB[22m
+[2mdist/[22m[36massets/TableShell-D1cPen65.js                                                  [39m[1m[2m  0.64 kB[22m[1m[22m[2m │ gzip:  0.40 kB[22m
+[2mdist/[22m[36massets/ActionRow-CEIvtP-b.js                                                   [39m[1m[2m  0.65 kB[22m[1m[22m[2m │ gzip:  0.41 kB[22m
+[2mdist/[22m[36massets/modelCatalog-DV2t0ZZq.js                                                [39m[1m[2m  0.65 kB[22m[1m[22m[2m │ gzip:  0.34 kB[22m
+[2mdist/[22m[36massets/PanelHeader-BIz-Hh1C.js                                                 [39m[1m[2m  0.68 kB[22m[1m[22m[2m │ gzip:  0.42 kB[22m
+[2mdist/[22m[36massets/ConsoleSegmentedTabs-DJ365FF8.js                                        [39m[1m[2m  0.69 kB[22m[1m[22m[2m │ gzip:  0.44 kB[22m
+[2mdist/[22m[36massets/PageLoadingState-CAs7BuBE.js                                            [39m[1m[2m  0.70 kB[22m[1m[22m[2m │ gzip:  0.47 kB[22m
+[2mdist/[22m[36massets/SurfaceBox-d_5LrpAb.js                                                  [39m[1m[2m  0.79 kB[22m[1m[22m[2m │ gzip:  0.45 kB[22m
+[2mdist/[22m[36massets/MetaChip.vue_vue_type_script_setup_true_lang-w1bc_Wod.js                [39m[1m[2m  0.86 kB[22m[1m[22m[2m │ gzip:  0.49 kB[22m
+[2mdist/[22m[36massets/StateBlock-rsbtCn6-.js                                                  [39m[1m[2m  0.92 kB[22m[1m[22m[2m │ gzip:  0.50 kB[22m
+[2mdist/[22m[36massets/FormSection-x7D65Q96.js                                                 [39m[1m[2m  1.06 kB[22m[1m[22m[2m │ gzip:  0.53 kB[22m
+[2mdist/[22m[36massets/InfoCard-B4QU63UI.js                                                    [39m[1m[2m  1.12 kB[22m[1m[22m[2m │ gzip:  0.55 kB[22m
+[2mdist/[22m[36massets/SelectionBulkBar-D59V_Xd-.js                                            [39m[1m[2m  1.24 kB[22m[1m[22m[2m │ gzip:  0.69 kB[22m
+[2mdist/[22m[36massets/accountImports-BeyJwSNd.js                                              [39m[1m[2m  1.34 kB[22m[1m[22m[2m │ gzip:  0.42 kB[22m
+[2mdist/[22m[36massets/proxy-BE21vAL1.js                                                       [39m[1m[2m  1.34 kB[22m[1m[22m[2m │ gzip:  0.61 kB[22m
+[2mdist/[22m[36massets/AppConfirmDialog.vue_vue_type_script_setup_true_lang-y6rFrcHI.js        [39m[1m[2m  1.36 kB[22m[1m[22m[2m │ gzip:  0.76 kB[22m
+[2mdist/[22m[36massets/useModelCatalog-D2CiK59I.js                                             [39m[1m[2m  1.54 kB[22m[1m[22m[2m │ gzip:  0.73 kB[22m
+[2mdist/[22m[36massets/MetricStrip-BYqYRd6p.js                                                 [39m[1m[2m  1.73 kB[22m[1m[22m[2m │ gzip:  0.84 kB[22m
+[2mdist/[22m[36massets/RuntimeLogPanel-DspFfrd4.js                                             [39m[1m[2m  1.90 kB[22m[1m[22m[2m │ gzip:  0.89 kB[22m
+[2mdist/[22m[36massets/downloads-Cm0zgzaq.js                                                   [39m[1m[2m  1.92 kB[22m[1m[22m[2m │ gzip:  0.93 kB[22m
+[2mdist/[22m[36massets/Login-C_jzw--j.js                                                       [39m[1m[2m  2.72 kB[22m[1m[22m[2m │ gzip:  1.61 kB[22m
+[2mdist/[22m[36massets/ModalShell-DrzYXBx6.js                                                  [39m[1m[2m  2.87 kB[22m[1m[22m[2m │ gzip:  1.15 kB[22m
+[2mdist/[22m[36massets/ProgressBar-B74nI4VO.js                                                 [39m[1m[2m  3.17 kB[22m[1m[22m[2m │ gzip:  1.52 kB[22m
+[2mdist/[22m[36massets/PublicUptime-DO0xHIV2.js                                                [39m[1m[2m  4.14 kB[22m[1m[22m[2m │ gzip:  2.07 kB[22m
+[2mdist/[22m[36massets/GroupedSelectMenu-DFKoo1bV.js                                           [39m[1m[2m  5.47 kB[22m[1m[22m[2m │ gzip:  2.32 kB[22m
+[2mdist/[22m[36massets/FloatingActionMenu-na8cckI0.js                                          [39m[1m[2m  7.18 kB[22m[1m[22m[2m │ gzip:  2.63 kB[22m
+[2mdist/[22m[36massets/settings-pfZDU5sa.js                                                    [39m[1m[2m  8.07 kB[22m[1m[22m[2m │ gzip:  2.70 kB[22m
+[2mdist/[22m[36massets/PublicLogs-hWFOEF4c.js                                                  [39m[1m[2m  8.32 kB[22m[1m[22m[2m │ gzip:  3.48 kB[22m
+[2mdist/[22m[36massets/Docs-Ch3D6c_n.js                                                        [39m[1m[2m  9.14 kB[22m[1m[22m[2m │ gzip:  4.02 kB[22m
+[2mdist/[22m[36massets/gallery-tZGkMkGw.js                                                     [39m[1m[2m 10.26 kB[22m[1m[22m[2m │ gzip:  4.11 kB[22m
+[2mdist/[22m[36massets/DebugCenter-DSDX0A8f.js                                                 [39m[1m[2m 12.42 kB[22m[1m[22m[2m │ gzip:  5.12 kB[22m
+[2mdist/[22m[36massets/Monitor-C2muELRE.js                                                     [39m[1m[2m 14.09 kB[22m[1m[22m[2m │ gzip:  4.92 kB[22m
+[2mdist/[22m[36massets/Gallery-C4y4vFDj.js                                                     [39m[1m[2m 18.32 kB[22m[1m[22m[2m │ gzip:  6.82 kB[22m
+[2mdist/[22m[36massets/Proxy-BjnLK_ZS.js                                                       [39m[1m[2m 20.01 kB[22m[1m[22m[2m │ gzip:  6.64 kB[22m
+[2mdist/[22m[36massets/Dashboard-B2cjQ8yp.js                                                   [39m[1m[2m 21.08 kB[22m[1m[22m[2m │ gzip:  7.15 kB[22m
+[2mdist/[22m[36massets/AppShell-jF6xAPHy.js                                                    [39m[1m[2m 28.61 kB[22m[1m[22m[2m │ gzip: 10.42 kB[22m
+[2mdist/[22m[36massets/ImageTasks-C0_dHJ7Z.js                                                  [39m[1m[2m 30.30 kB[22m[1m[22m[2m │ gzip: 10.32 kB[22m
+[2mdist/[22m[36massets/Logs-B7dFdnox.js                                                        [39m[1m[2m 41.80 kB[22m[1m[22m[2m │ gzip: 14.19 kB[22m
+[2mdist/[22m[36massets/Register-CBNyqPCt.js                                                    [39m[1m[2m 45.55 kB[22m[1m[22m[2m │ gzip: 12.64 kB[22m
+[2mdist/[22m[36massets/Settings-PJYndpx9.js                                                    [39m[1m[2m 67.72 kB[22m[1m[22m[2m │ gzip: 16.67 kB[22m
+[2mdist/[22m[36massets/Accounts-D8-15CHm.js                                                    [39m[1m[2m 89.38 kB[22m[1m[22m[2m │ gzip: 26.29 kB[22m
+[2mdist/[22m[36massets/index-W3iXP3Ct.js                                                       [39m[1m[2m218.18 kB[22m[1m[22m[2m │ gzip: 80.99 kB[22m
+[32m✓ built in 3.78s[39m
+
+> chatgpt2api-console@2.1.1 sync
+> node scripts/sync-web-dist.mjs
+
+[sync-web-dist] 已同步 60 个 assets 到 ..\internal\api\web_dist
