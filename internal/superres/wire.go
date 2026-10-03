@@ -58,7 +58,10 @@ func ApplyB64(ctx context.Context, plan *Plan, b64 []byte) Result {
 	if plan == nil || plan.Factor <= 1 || len(b64) == 0 {
 		return Result{Data: b64, Kind: KindB64}
 	}
-	dataURL := "data:image/png;base64," + base64Std(b64)
+	// b64 已是 base64 文本（orchestrator 下载图片后编码过一次），
+	// 直接拼 dataURL —— 不能再编码第二次（双重 base64 会让超分上传
+	// 的 body 是 ASCII 文本而非图片字节，腾讯 CI 报 InvalidImageFormat）。
+	dataURL := "data:image/png;base64," + string(b64)
 	out := Enhance(ctx, FromConfig(), plan, dataURL)
 	if out == dataURL {
 		// 降级：原图返回（b64 形态不变）
