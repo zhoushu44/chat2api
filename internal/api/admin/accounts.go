@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -396,7 +397,11 @@ func (h *AccountsHandler) RefreshAccounts(c *gin.Context) {
 			tokens = append(tokens, t)
 		}
 	}
-	progressID, err := h.Refresh.RefreshAll(c.Request.Context(), tokens)
+	// 注意：不能用 c.Request.Context() —— HTTP 响应返回后它会立即 cancel，
+	// 后台刷新协程的全部探测会因 "operation was canceled" 失败。
+	// 用独立的后台 context（对等 Python 后台线程语义）。
+	background := context.Background()
+	progressID, err := h.Refresh.RefreshAll(background, tokens)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
 			"message": err.Error(), "type": "invalid_request_error", "code": "refresh_failed",
