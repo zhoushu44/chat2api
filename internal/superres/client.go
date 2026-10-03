@@ -3,6 +3,7 @@ package superres
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -87,6 +88,9 @@ func dateKey(t time.Time) string {
 // UploadAndSuperResolution 上传源图并在上传时触发数据万象 AI 超分（对等 Python
 // upload_source_with_super_resolution：put_object + PicOperations ci-process=AISuperResolution&magnify=factor）。
 // 返回超分成品的公网 URL。sourceKey 仅为临时源图 key，调用方负责事后删除。
+// OutputFormat 非空时，超分完成后对成品追加一步 ImageProcess 云上转码（webp/jpeg），
+// 返回转码后对象的 URL（尺寸不变，体积约为无损 PNG 的 1/10~1/20）。
+// 注意：转码失败自动降级返回 PNG 原成品（与整体「失败不阻断」语义一致）。
 func (s *COSClient) UploadAndSuperResolution(ctx context.Context, cfg *Config, source []byte, contentType string, factor int) (resultURL string, sourceKey string, err error) {
 	if factor != 2 && factor != 4 {
 		return "", "", fmt.Errorf("superres: factor must be 2 or 4, got %d", factor)
@@ -125,7 +129,49 @@ func (s *COSClient) UploadAndSuperResolution(ctx context.Context, cfg *Config, s
 	if len(res.ProcessResults) == 0 || res.ProcessResults[0].Key == "" {
 		return "", "", fmt.Errorf("superres: cos process returned no result object")
 	}
+
+	// 可选输出转码（OutputFormat=webp/jpeg）：对超分成品做云上 ImageProcess。
+	// AI 超分不支持管道链（实测 imageMogr2|AISuperResolution 的 magnify 参数被拒），
+	// 因此分两步：先超分出 PNG，再对成品 POST ?image_process 持久化转码。
+	if f := normalizeOutputFormat(cfg.OutputFormat); f != "" {
+		compressedKey := fmt.Sprintf("/image-super-resolution/%s/%s.%s", dateKey(time.Now()), uuid.NewString(), f)
+		pic2 := &cos.PicOperations{
+			IsPicInfo: 1,
+			Rules: []cos.PicOperationsRules{
+				{
+					FileId: compressedKey,
+					Rule:   fmt.Sprintf("imageMogr2/format/%s/quality/%d", f, cfg.outputQuality()),
+				},
+			},
+		}
+		res2, _, err2 := client.CI.ImageProcess(ctx, strings.TrimPrefix(resultKey, "/"), pic2)
+		// 转码失败降级：返回无损 PNG 成品（可用性优先）
+		if err2 == nil && len(res2.ProcessResults) > 0 && res2.ProcessResults[0].Key != "" {
+			return cfg.resultURL(compressedKey), sourceKey, nil
+		}
+		log.Printf("[superres] output transcode to %s failed (fallback to lossless png): %v", f, err2)
+	}
 	return cfg.resultURL(resultKey), sourceKey, nil
+}
+
+// normalizeOutputFormat 归一化输出格式：webp / jpeg 合法（png/空 = 保持无损）。
+func normalizeOutputFormat(s string) string {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "webp":
+		return "webp"
+	case "jpeg", "jpg":
+		return "jpeg"
+	default:
+		return ""
+	}
+}
+
+// outputQuality 转码质量（默认 85；范围外收敛到 60~95）。
+func (c *Config) outputQuality() int {
+	if c.OutputQuality < 60 || c.OutputQuality > 95 {
+		return 85
+	}
+	return c.OutputQuality
 }
 
 // DeleteSource 删除上传的临时源图（尽力而为，失败不影响主流程）。
