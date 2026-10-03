@@ -26,6 +26,7 @@ import (
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/proxy"
 	"chatgpt2api/internal/provider"
+	"chatgpt2api/internal/refresh"
 	"chatgpt2api/internal/register"
 	"chatgpt2api/internal/scheduler"
 )
@@ -110,6 +111,15 @@ func main() {
 	}
 	// 注入到路由（/api/scheduler GET/PUT，账号页开关用）
 	srv.Sched = sched
+
+	// 账号额度周期同步（refresh_account_interval_minute 驱动，默认 60 分钟）：
+	// 全量探测远程图片额度回写号池，修复「剩余额度」展示口径。
+	refreshCtx, refreshCancel := context.WithCancel(context.Background())
+	defer refreshCancel()
+	refreshSvc := refresh.NewService(srv.Accounts, srv.Pool, cfg.EffectiveProxy())
+	srv.Refresher = refreshSvc
+	refreshSvc.RunPeriodic(refreshCtx, cfg.RefreshAccountMin)
+	log.Printf("[refresh] 已启动周期额度同步，间隔 %d 分钟", cfg.RefreshAccountMin)
 
 	r := srv.NewRouter()
 	log.Printf("chatgpt2api-go listening on %s (storage=%s data=%s accounts=%d) GOMAXPROCS=%d auto_refill=%v", *addr, cfg.StorageType, cfg.DataDir, len(srv.Accounts.List()), runtime.GOMAXPROCS(0), regSvc.GetConfig().AutoRefill)

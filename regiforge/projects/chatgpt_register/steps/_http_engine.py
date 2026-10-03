@@ -952,7 +952,7 @@ def _register_sync(
     if sd.get("sentinel_so_token"):
         oauth_headers["openai-sentinel-so-token"] = sd["sentinel_so_token"]
 
-    def _oauth_get(url: str, *, hop: int, timeout: float = 60):
+    def _oauth_get(url: str, *, hop: int, timeout: float = 30):
         try:
             return session.get(
                 url,
@@ -973,8 +973,9 @@ def _register_sync(
     r = None
     final = ""
     for hop in range(12):
-        # 首跳 authorize 最关键且最慢；后续页 45s 足够
-        hop_timeout = 75 if hop == 0 else 45
+        # 首跳 authorize 最关键且最慢；后续页 30s 足够
+        # （挂死的代理引擎等 60s 也等不来，快失败快换出口）
+        hop_timeout = 40 if hop == 0 else 30
         r = _oauth_get(cur, hop=hop, timeout=hop_timeout)
         final = str(getattr(r, "url", cur) or cur)
         loc = r.headers.get("Location", "") or ""
@@ -994,7 +995,7 @@ def _register_sync(
             final = cur
             # 轻量 GET 落地 cookie；失败不阻断（OTP 可能已发出）
             try:
-                r = _oauth_get(cur, hop=hop + 1, timeout=45)
+                r = _oauth_get(cur, hop=hop + 1, timeout=30)
                 final = str(getattr(r, "url", cur) or cur)
             except RetriableRegisterError as exc:
                 log(f"  [提示] 验证页 GET 失败（已有 Location，继续等 OTP）: {exc}")

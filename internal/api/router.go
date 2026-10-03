@@ -21,6 +21,7 @@ import (
 	"chatgpt2api/internal/prompt"
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/register"
+	"chatgpt2api/internal/refresh"
 	"chatgpt2api/internal/scheduler"
 	"chatgpt2api/internal/settings"
 	"chatgpt2api/internal/task"
@@ -58,6 +59,8 @@ type Server struct {
 	Runtime *logsvc.RuntimeService
 	// Monitor 页面实时事件（进程内发布/订阅）
 	Mon *monitor.Service
+	// 账号额度刷新服务（「刷新账号信息和额度」按钮 + 周期同步）
+	Refresher *refresh.Service
 }
 
 // dataDir 统一解析数据目录（Cfg 可能为 nil，此时回落到 ./data）。
@@ -184,7 +187,15 @@ func (s *Server) NewRouter() *gin.Engine {
 		RegisterAuthUsers(adminGroup, s.Auth)
 	}
 	if s.Accounts != nil {
-		(&admin.AccountsHandler{Accounts: s.Accounts, Pool: s.Pool}).Register(adminGroup)
+		// 账号刷新服务（nil 安全：handler 未注入时 refresh 路由 503）
+		if s.Refresher == nil {
+			proxy := ""
+			if s.Cfg != nil {
+				proxy = s.Cfg.EffectiveProxy()
+			}
+			s.Refresher = refresh.NewService(s.Accounts, s.Pool, proxy)
+		}
+		(&admin.AccountsHandler{Accounts: s.Accounts, Pool: s.Pool, Refresh: s.Refresher}).Register(adminGroup)
 	}
 	// 调度器开关（账号页「每日401验活+协议恢复」）
 	if s.Sched != nil {

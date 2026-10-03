@@ -125,7 +125,7 @@ class SentinelSDKManager:
                 fr = session.get(
                     discovery,
                     headers={"accept": "text/html,application/javascript,*/*;q=0.8"},
-                    timeout=30,
+                    timeout=20,
                 )
                 if fr.status_code >= 400:
                     raise SentinelVMError(f"frame.html HTTP {fr.status_code}")
@@ -137,7 +137,7 @@ class SentinelSDKManager:
                 if current.version == version:
                     self._active = current
                 else:
-                    ds = session.get(sdk_url, headers={"accept": "*/*"}, timeout=30)
+                    ds = session.get(sdk_url, headers={"accept": "*/*"}, timeout=20)
                     if ds.status_code >= 400:
                         raise SentinelVMError(f"sdk 下载失败 HTTP {ds.status_code}")
                     code = ds.text or ""
@@ -505,7 +505,7 @@ def build_first_sentinel_v8(
     flow: str | None = None,
     oai_did: str | None = None,
     log: LogFn | None = None,
-    timeout: float = 60.0,
+    timeout: float = 25.0,
 ) -> dict[str, str]:
     """返回 {"openai-sentinel-token": ..., "openai-sentinel-so-token": ...}
     （只包含实际有值的键）。不开浏览器。"""

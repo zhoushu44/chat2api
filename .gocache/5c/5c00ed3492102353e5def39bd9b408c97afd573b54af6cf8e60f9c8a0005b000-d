@@ -1,0 +1,6 @@
+./exif.go
+./lanczos.go
+./pagination.go
+./service.go
+./storage.go
+./webdav.go

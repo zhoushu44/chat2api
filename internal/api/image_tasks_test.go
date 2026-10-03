@@ -40,6 +40,9 @@ func TestImageTaskRoutesRegistered(t *testing.T) {
 		{"POST", "/api/image-tasks/generations"},
 		{"POST", "/api/image-tasks/edits"},
 		{"POST", "/api/image-tasks/t-1/resume-poll"},
+		// 账号刷新路由（此前 404：前端「刷新账号信息和额度」按钮无后端）
+		{"POST", "/api/accounts/refresh"},
+		{"GET", "/api/accounts/refresh/progress/x"},
 	} {
 		req, _ := http.NewRequest(tc.method, tc.path, bytes.NewReader([]byte(`{"prompt":"cat"}`)))
 		req.Header.Set("Content-Type", "application/json")

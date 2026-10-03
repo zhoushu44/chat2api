@@ -174,7 +174,10 @@ func LoadAll() {
 			{Name: "api_key", Label: "API Key", InputType: "secret", Required: true},
 		}})
 		// proxy
-		Register(TypeProxy, Definition{Key: "mihomo", Label: "Mihomo 订阅池", DriverType: "mihomo", Category: "selfhost", Enabled: true, IsBuiltin: true, Description: "Clash/Mihomo 订阅，节点测速+脉冲调度"})
+		Register(TypeProxy, Definition{Key: "mihomo", Label: "Mihomo 订阅池", DriverType: "mihomo", Category: "selfhost", Enabled: true, IsBuiltin: true, Description: "Clash/Mihomo 订阅，节点测速+脉冲调度", Fields: []FieldDef{
+			{Name: "url", Label: "代理地址", InputType: "url", Required: true, Placeholder: "http://host:7891（mihomo HTTP 入口）"},
+			{Name: "key", Label: "认证(可选)", InputType: "secret", Required: false},
+		}})
 		Register(TypeProxy, Definition{Key: "api_extract", Label: "动态IP提取 API", DriverType: "api_extract", Category: "custom", Enabled: true, IsBuiltin: true})
 		Register(TypeProxy, Definition{Key: "static_pool", Label: "静态代理池", DriverType: "static_pool", Category: "custom", Enabled: true, IsBuiltin: true})
 		Register(TypeProxy, Definition{Key: "warp", Label: "Warp 代理", DriverType: "warp", Category: "selfhost", Enabled: true, IsBuiltin: true, Description: "自托管 warp-pool（socks5/http 代理 url）", Fields: []FieldDef{

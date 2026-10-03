@@ -1,0 +1,4 @@
+./classify.go
+./merge.go
+./task.go
+./classify_test.go

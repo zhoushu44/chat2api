@@ -1,0 +1,16 @@
+./backend.go
+./conversation.go
+./conversation_failure.go
+./diagnostics.go
+./download.go
+./mockupstream.go
+./pipeline.go
+./poll.go
+./quic.go
+./quota.go
+./real.go
+./resolve.go
+./tasks.go
+./text.go
+./upload.go
+./verify.go

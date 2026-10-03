@@ -364,10 +364,10 @@ async def extract_sentinel(
             page.on("response", _on_response)
             _log("Sentinel: 打开授权页...")
             try:
-                await page.goto(auth_url, wait_until="domcontentloaded", timeout=45_000)
+                await page.goto(auth_url, wait_until="domcontentloaded", timeout=25_000)
             except Exception as exc:
                 _log(f"Sentinel: domcontentloaded 失败，改用 commit: {exc}")
-                await page.goto(auth_url, wait_until="commit", timeout=45_000)
+                await page.goto(auth_url, wait_until="commit", timeout=25_000)
 
             try:
                 await page.wait_for_load_state("networkidle", timeout=12_000)

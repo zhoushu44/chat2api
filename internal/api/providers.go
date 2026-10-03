@@ -120,6 +120,9 @@ func (h *ProviderHandler) TestSetting(c *gin.Context) {
 	switch {
 	case t == provider.TypeProxy && key == "warp":
 		res = testProxyWarp(body.Config)
+	case t == provider.TypeProxy && key == "mihomo":
+		// mihomo 直连入口（http/socks5）与 warp 同为单 URL 代理，复用连通测试
+		res = testProxyWarp(body.Config)
 	case t == provider.TypeMailbox && key == "mailnest":
 		res = testMailboxMailnest(body.Config)
 	default:

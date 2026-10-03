@@ -159,7 +159,7 @@
                 />
               </label>
 
-              <label v-else-if="registerProxyMode === 'custom' || registerProxyMode === 'warp'" class="register-field">
+              <label v-else-if="registerProxyMode === 'custom' || registerProxyMode === 'warp' || registerProxyMode === 'mihomo'" class="register-field">
                 <span class="register-label">自定义代理</span>
                 <Input
                   :model-value="customRegisterProxyInput"
@@ -732,7 +732,7 @@ import { useToast } from '@/composables/useToast'
 
 type RegisterMode = 'total' | 'quota' | 'available'
 type OutlookResetScope = 'all' | 'failed' | 'unused'
-type RegisterProxyMode = 'global' | 'direct' | 'group' | 'custom' | 'warp'
+type RegisterProxyMode = 'global' | 'direct' | 'group' | 'custom' | 'warp' | 'mihomo'
 
 const toast = useToast()
 const confirmDialog = useConfirmDialog()
@@ -1031,6 +1031,7 @@ const registerProxyModeOptions = [
   { value: 'group', label: '代理组' },
   { value: 'custom', label: '自定义代理' },
   { value: 'warp', label: 'Warp 代理' },
+  { value: 'mihomo', label: 'Mihomo 代理' },
 ]
 const registerProxyModeGroups = [{ options: registerProxyModeOptions }]
 
@@ -1107,6 +1108,7 @@ const registerProxyHint = computed(() => {
   if (registerProxyMode.value === 'direct') return '本次注册任务强制直连，不读取全局代理。'
   if (registerProxyMode.value === 'group') return '注册任务会使用所选代理组；代理组为空时不会偷偷回退到全局代理。'
   if (registerProxyMode.value === 'custom') return '仅本注册任务使用该代理地址。'
+  if (registerProxyMode.value === 'mihomo') return '经 mihomo 7891 HTTP 入口出站（单一固定出口，批量注册建议用 Warp 代理）。'
   return '默认使用系统设置里的全局代理；全局未配置时直连。'
 })
 const enabledProviderCount = computed(() => registerProviders.value.filter(provider => provider.enable !== false).length)
@@ -1559,6 +1561,14 @@ function setRegisterProxyMode(mode: string) {
   if (mode === 'warp') {
     customRegisterProxyInput.value = 'socks5://195.72.185.32:11010'
     registerProxyMode.value = 'warp'
+    if (registerConfig.value) {
+      registerConfig.value.proxy = serializeProxyReference('custom', customRegisterProxyInput.value)
+    }
+    return
+  }
+  if (mode === 'mihomo') {
+    customRegisterProxyInput.value = 'http://195.72.185.32:7891'
+    registerProxyMode.value = 'mihomo'
     if (registerConfig.value) {
       registerConfig.value.proxy = serializeProxyReference('custom', customRegisterProxyInput.value)
     }

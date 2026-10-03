@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"chatgpt2api/internal/account"
+	"chatgpt2api/internal/refresh"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,6 +16,8 @@ import (
 type AccountsHandler struct {
 	Accounts *account.Service
 	Pool     *account.Pool
+	// Refresh 账号额度刷新服务（nil 时 refresh 路由返回 503）。
+	Refresh *refresh.Service
 }
 
 func (h *AccountsHandler) Register(r *gin.RouterGroup) {
@@ -24,6 +27,9 @@ func (h *AccountsHandler) Register(r *gin.RouterGroup) {
 	r.DELETE("/accounts/:id", h.Delete)
 	r.GET("/accounts/stats", h.Stats)
 	r.POST("/accounts/check", h.Check)
+	// 账号刷新：POST 启动（返回 progress_id），GET progress 轮询（前端「刷新账号信息和额度」按钮）
+	r.POST("/accounts/refresh", h.RefreshAccounts)
+	r.GET("/accounts/refresh/progress/:id", h.RefreshProgress)
 	// 账号清理：preview 只统计，run 真正删除（控制台「自动移除异常/限流账号」开关调用）
 	r.POST("/accounts/cleanup/preview", h.CleanupPreview)
 	r.POST("/accounts/cleanup/run", h.CleanupRun)
@@ -367,4 +373,55 @@ func (h *AccountsHandler) cleanup(c *gin.Context, dryRun bool) {
 		}
 	}
 	c.JSON(http.StatusOK, result)
+}
+
+// RefreshAccounts 启动账号额度刷新（前端「刷新账号信息和额度」按钮）。
+// body: {"access_tokens": [...]}（空数组/缺省 = 全部）→ {progress_id}
+// 对等 Python POST /api/accounts/refresh 契约。
+func (h *AccountsHandler) RefreshAccounts(c *gin.Context) {
+	if h.Refresh == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": gin.H{
+			"message": "account refresh service unavailable",
+			"type":    "api_error", "code": "service_unavailable",
+		}})
+		return
+	}
+	var body struct {
+		AccessTokens []string `json:"access_tokens"`
+	}
+	_ = c.ShouldBindJSON(&body) // 空 body 也合法（全量刷新）
+	tokens := make([]string, 0, len(body.AccessTokens))
+	for _, t := range body.AccessTokens {
+		if t = strings.TrimSpace(t); t != "" {
+			tokens = append(tokens, t)
+		}
+	}
+	progressID, err := h.Refresh.RefreshAll(c.Request.Context(), tokens)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": gin.H{
+			"message": err.Error(), "type": "invalid_request_error", "code": "refresh_failed",
+		}})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"progress_id": progressID})
+}
+
+// RefreshProgress 轮询刷新进度（前端 refreshAndPoll 契约）。
+// 返回 {total, processed, done, error?, status_counts?, total_quota?, result?}。
+func (h *AccountsHandler) RefreshProgress(c *gin.Context) {
+	id := strings.TrimSpace(c.Param("id"))
+	p := refresh.GetProgress(id)
+	if p == nil {
+		// 已清理/不存在：视为完成（前端据此停止轮询）
+		c.JSON(http.StatusOK, gin.H{"total": 0, "processed": 0, "done": true})
+		return
+	}
+	out := refresh.ProgressJSON(p)
+	// result 字段：对齐前端 AccountRefreshProgress.result 形状
+	out["result"] = gin.H{
+		"refreshed": p.Refreshed,
+		"errors":    p.Errors,
+		"items":     p.Items,
+	}
+	c.JSON(http.StatusOK, out)
 }

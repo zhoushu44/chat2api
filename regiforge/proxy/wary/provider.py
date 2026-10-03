@@ -66,10 +66,12 @@ class WaryProxyProvider(ProxyProvider):
                     resp = await client.get(json_url)
                     resp.raise_for_status()
                 except Exception as e:
+                    import traceback
+                    tb = "".join(traceback.format_exception(type(e), e, e.__traceback__)[-3:])
                     if attempt < max_retries - 1:
                         await asyncio.sleep(retry_delay)
                         continue
-                    raise RuntimeError(f"Wary 代理 API 请求失败：{e}")
+                    raise RuntimeError(f"Wary 代理 API 请求失败：{type(e).__name__}: {e} | url={json_url} | tb={tb[-500:]}")
 
             content_type = resp.headers.get("content-type", "").lower()
             if "application/json" in content_type or resp.text.strip().startswith("{"):

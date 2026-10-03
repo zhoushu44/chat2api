@@ -1,0 +1,5 @@
+./regiforge.go
+./register.go
+./regiforge_test.go
+./register_diff_test.go
+./register_test.go

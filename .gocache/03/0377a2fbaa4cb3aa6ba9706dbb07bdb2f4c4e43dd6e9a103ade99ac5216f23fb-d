@@ -1,0 +1,4 @@
+./image_attempts.go
+./logsvc.go
+./runtime.go
+./logsvc_test.go

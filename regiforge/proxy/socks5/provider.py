@@ -200,6 +200,76 @@ class Socks5Provider(ProxyProvider):
         # API 返回的代理也可能是带认证的，需要转发器
         return self._with_auth_forwarder(proxy_info)
 
+    async def release(self, proxy: ProxyInfo, failure_type: str | None = None) -> None:
+        """释放粘性会话（带 sid 时通知代理池，可选上报失败类型）。"""
+        # 停本地转发器（带认证代理的 forwarder 线程与监听 socket）
+        forwarder = (proxy.meta or {}).get("forwarder")
+        if forwarder:
+            try:
+                forwarder.stop()
+            except Exception:
+                pass
+
+        sid = str((proxy.meta or {}).get("sid") or "").strip()
+        api_url = str(self._config.get("api_url") or "").strip()
+        if not sid or not api_url:
+            return
+
+        parsed = urlparse(api_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        api_key = str(self._config.get("api_key") or "").strip()
+        timeout = int(self._config.get("timeout") or 10)
+        headers = {}
+        if api_key:
+            if api_key.startswith("Bearer "):
+                headers["Authorization"] = api_key
+            else:
+                headers["X-API-Key"] = api_key
+
+        # 失败上报（不释放会话）：result=0 表示连接失败（服务端协议为 HTTP 状态码）
+        # 服务端把它计入 CF 统计（连续失败率高会触发换IP/重建）
+        if failure_type:
+            try:
+                async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+                    await client.post(
+                        f"{base}/api/pool/report",
+                        json={"session_id": sid, "result": 0, "failure_type": failure_type},
+                    )
+            except Exception:
+                pass  # best-effort
+
+        # 释放会话
+        try:
+            async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+                await client.post(f"{base}/api/pool/release", json={"session_id": sid})
+        except Exception:
+            pass  # best-effort，服务端会按过期时间回收
+
+    async def report_failure(self, proxy: ProxyInfo, failure_type: str = "proxy_dead") -> None:
+        """上报实例故障（不释放会话），触发服务端检查/重启该实例。"""
+        sid = str((proxy.meta or {}).get("sid") or "").strip()
+        api_url = str(self._config.get("api_url") or "").strip()
+        if not sid or not api_url:
+            return
+        parsed = urlparse(api_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        api_key = str(self._config.get("api_key") or "").strip()
+        timeout = int(self._config.get("timeout") or 10)
+        headers = {}
+        if api_key:
+            if api_key.startswith("Bearer "):
+                headers["Authorization"] = api_key
+            else:
+                headers["X-API-Key"] = api_key
+        try:
+            async with httpx.AsyncClient(timeout=timeout, headers=headers) as client:
+                await client.post(
+                    f"{base}/api/pool/report",
+                    json={"session_id": sid, "result": 0, "failure_type": failure_type},
+                )
+        except Exception:
+            pass  # best-effort
+
     def _extract_from_json(self, data: Any) -> str | None:
         """从 JSON 响应中提取代理地址。"""
         json_path = str(self._config.get("json_path") or "").strip()

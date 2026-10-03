@@ -75,12 +75,12 @@ async def run(page, email: str = "") -> None:
         try:
             # 直接导航到 auth.openai.com 登录页（带邮箱参数）
             params = f"?email={email}" if email else ""
-            await page.goto(f"{AUTH_LOGIN_URL}{params}", wait_until="commit", timeout=60_000)
+            await page.goto(f"{AUTH_LOGIN_URL}{params}", wait_until="commit", timeout=25_000)
             await page.wait_for_timeout(3000)
             if await email_locator.count():
                 return
             # 兜底：打开 chatgpt.com 登录页
-            await page.goto(LOGIN_URL, wait_until="commit", timeout=60_000)
+            await page.goto(LOGIN_URL, wait_until="commit", timeout=25_000)
             await page.wait_for_timeout(1500)
 
             if not await email_locator.count():
@@ -91,7 +91,7 @@ async def run(page, email: str = "") -> None:
                 await _click_email_login_entry(page)
                 await page.wait_for_timeout(1000)
 
-            await email_locator.first.wait_for(state="visible", timeout=30_000)
+            await email_locator.first.wait_for(state="visible", timeout=25_000)
             return
         except Exception as exc:
             last_error = exc
