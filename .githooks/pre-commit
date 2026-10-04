@@ -1,0 +1,27 @@
+#!/bin/sh
+# ============================================================
+# pre-commit：提交前密钥/凭据扫描
+#
+# 由 tools/install-hooks.sh 安装（设置 core.hooksPath=.githooks）。
+# 只扫描本次暂存内容；扫描规则为通用模式，不含任何真实密钥。
+#
+# PATH 修复由 tools/secret-scan.sh 自行完成（它在被调用后立即补
+# MSYS 工具目录），因此本钩子保持极简，只负责转发与传递退出码。
+#
+# 紧急情况可跳过（不推荐）：
+#   git commit --no-verify
+# ============================================================
+set -u
+
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+SCANNER="$REPO_ROOT/tools/secret-scan.sh"
+
+if [ ! -f "$SCANNER" ]; then
+    echo "[pre-commit] 未找到 $SCANNER，跳过密钥扫描。" >&2
+    exit 0
+fi
+
+# 用 sh 执行，保证 Windows / Linux / macOS 行为一致。
+# 退出码必须原样透传：非 0 才能阻止本次提交。
+sh "$SCANNER" --staged
+exit $?

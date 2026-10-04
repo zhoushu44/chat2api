@@ -24,10 +24,32 @@ register.json
 localtest-config.json
 m9-config.json
 
+# 私钥与证书材料（真实密钥绝不入库；.gocache 内第三方测试夹具已随该目录一并忽略）
+*.pem
+*.key
+*.p12
+*.pfx
+*.ppk
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*known_hosts
+
+# 灰度/单镜像运行时数据（accounts.json、config.json 等含 token 与 auth-key）
+deploy/gray/data/
+deploy/single/regiforge-data/
+
+# 一次性 SSH / 运维脚本（常含服务器 IP 与明文口令，绝不入库）
+ssh_run.py
+ssh_*.py
+run_on_server.py
+
 # 本地演示脚本（含密钥，仅本机用）
 start-demo.bat
 
 # 缓存
+# Go 模块缓存：曾被误提交进仓（2 万+ 文件），绝不入库
+.gocache/
 tiktoken-cache/
 __pycache__/
 *.py[cod]
@@ -58,6 +80,86 @@ regiforge/data/
 
 # 本地运维脚本（含服务器 IP / 明文密码，绝不入库）
 .tmp-ssh/
+# 所有 .tmp_* 临时脚本/诊断产物（此前只挡了 .tmp-ssh/，导致 108 个含 IP 与明文密码的脚本入库）
+.tmp_*
+
+# 根目录一次性运维/排查/压测脚本（经扫描确认：全部含服务器 IP + root 明文口令）
+# 说明：必须用根锚定「/」前缀，只匹配仓库根目录。
+#       若写成 probe_*.py 之类不加锚定的模式，会误伤正式源码
+#       （如 regiforge/scripts/probe_login.py、regiforge/.../tests/）。
+#       正式测试代码在 regiforge/**/tests/ 下，不受以下规则影响。
+/probe_*.py
+/check_*.py
+/verify_*.py
+/get_*.py
+/test_*.py
+/cleanup*.py
+/stress_*.py
+/stress_test_result*.json
+/生图压测报告.html
+/交付说明.md
+/deliverable/
+
+# 密钥扫描器：已泄露值清单只存本地，绝不入库（模板 secrets-known.example.txt 可入库）
+tools/secrets-known.txt
 
 # 本地测试残留图片
 test_cat.png
+
+# ============ 2026-10-04 补充：真实2K/4K改造会话产生的一性脚本 ============
+# 全部含服务器 IP + root 明文口令，已完成使命，不入库
+.secrets.env
+analyze_superres.py
+apply_patch.py
+assess_deploy_risk.py
+backup_config.py
+build_*.py
+collect_final.py
+compare_*.py
+copy_bin.py
+definitive_ci_test.py
+deploy_safe_script.py
+diag_*.py
+do_*.py
+dim_mapping.py
+ex5.py
+extract_*.py
+final_probe.py
+finalize.py
+find_*.py
+fix_settings.py
+full_test.py
+get_sqlite.py
+inspect_src.py
+pull_source.py
+read_*.py
+reapply.py
+rebuild_*.py
+remote_*.py
+repro_500.py
+restart_final.py
+run_*.py
+size_matrix.py
+start_verify.py
+sync_deliverable.py
+upload_patches.py
+validate_deploy_mechanism.py
+final_check.py
+ssh_run.py
+sr_src.txt
+callers.txt
+flow.txt
+cfg_struct.txt
+build_env.txt
+*.log
+
+# 会话产物：报告/脚本/快照（含真实密钥，不入库）
+/cmp_sizes.sh
+/deploy-real2k4k.sh
+/test_response_format.sh
+/交付说明.md
+/chat2api生图诊断压测报告.html
+/final_source/
+/patched/
+/*.txt
+!*.env.example

@@ -1,0 +1,50 @@
+# ============================================================
+# gitleaks 配置：密钥扫描（CI 与本地均可使用）
+#
+# 与 tools/secret-scan.sh 的分工：
+#   * tools/secret-scan.sh  — 零依赖，pre-commit 本地拦截
+#   * gitleaks              — 规则更全，CI 兜底 + 历史扫描
+#
+# 用法：
+#   gitleaks detect --config .gitleaks.toml --redact --verbose
+#   gitleaks detect --config .gitleaks.toml --no-git      # 仅扫当前工作区
+# ============================================================
+title = "chat2api 密钥扫描策略"
+
+[extend]
+# 继承 gitleaks 内置规则（AWS/GitHub/Slack/私钥等通用模式）
+useDefault = true
+
+# ---------------- 允许清单 ----------------
+# gitleaks 的允许清单统一放在 [allowlist]：paths 排除路径，regexes 放行占位符。
+[allowlist]
+description = "排除第三方依赖夹具/构建产物，并放行占位符示例"
+
+# 路径排除
+paths = [
+    # Go 模块缓存：内容与 go.sum 声明的上游依赖一致，含上游自带的
+    # PEM 测试夹具、JWT 测试向量、Unicode 表等，属误报来源
+    '''\.gocache/mod/''',
+    # Go 构建缓存：无扩展名二进制分片，高熵误报多
+    '''\.gocache/build/''',
+    # 前端构建产物（压缩 JS）与依赖
+    '''internal/api/web_dist/''',
+    '''web-vue/node_modules/''',
+    '''web-vue/dist/''',
+    # 上游语言数据表（内含大量形似密钥的随机串）
+    '''golang\.org/x/text/''',
+    # 扫描器自身与占位符模板（内容本就是正则模式/示例）
+    '''tools/secret-scan\.sh''',
+    '''tools/secrets-known\.example\.txt''',
+]
+
+# 放行占位符与示例值（非真实密钥）
+regexes = [
+    '''(?i)换成你的密钥''',
+    '''(?i)your[-_ ]?(key|token|secret|pass)''',
+    '''(?i)placeholder''',
+    '''(?i)XXXX''',
+    '''(?i)example\.com''',
+    '''(?i)\b(fake|dummy|changeme)\b''',
+    '''CAP-XXXX''',
+]
