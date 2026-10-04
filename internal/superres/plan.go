@@ -11,6 +11,19 @@
 //
 // 移植自 zhoushu44/OpenAI-Image-Super-Resolution-Proxy（app.py，MIT 场景自用移植）：
 // 尺寸策略与校验规则与其 size_plan() 对等。
+//
+// === 本地改动（真实 2K/4K）===
+//
+//  1. 放开显式尺寸的总像素上限：原实现对显式 WIDTHxHEIGHT 直接施加 maxPixels 限制，
+//     导致 3840x2160 / 2560x1440 / 4096x4096 等标准 2K/4K 尺寸被拒绝，只有
+//     2k/4k 别名能用。现在显式尺寸与别名同等对待。
+//  2. 显式尺寸允许非 16 倍数：16 对齐只作用于「发给上游的源图尺寸」，
+//     请求的目标尺寸保持原样（1920x1080 也能用）。
+//  3. 最小像素补齐改为「等比放大」：原实现只 bump 单边（sw 或 sh），
+//     会让源图宽高比严重偏离目标（如 3840x2160 → 源 960x688，比例 1.40 vs 1.78），
+//     配合精确缩放会产生明显拉伸。现在按同一比例缩放两边，宽高比基本守恒。
+//  4. Plan 增加 Exact/Target：client.go 在超分后追加一步
+//     imageMogr2/thumbnail/WxH!，使成品尺寸严格等于请求尺寸。
 package superres
 
 import (
@@ -22,11 +35,14 @@ import (
 
 // 尺寸校验常量（对等 Python 版规则）。
 const (
-	maxLongEdge   = 3840            // 最长边上限
-	maxPixels     = 8_294_400       // 总像素上限（8K）
-	minPixels     = 655_360         // 总像素下限
-	maxAspect     = 3.0             // 宽高比上限
-	alignMultiple = 16              // 宽高对齐倍数
+	maxLongEdge   = 4096      // 最长边上限（请求侧）
+	maxPixels     = 8_294_400 // 总像素上限（8K）
+	minPixels     = 655_360   // 总像素下限
+	maxAspect     = 3.0       // 宽高比上限
+	alignMultiple = 16        // 源图宽高对齐倍数
+	// upscaleCeiling 超分后单边上限保护。腾讯云「处理参数不得超过 10000px」，
+	// AI 超分实测可稳定处理到该值；再大易触发 InternalError。
+	upscaleCeiling = 8192
 )
 
 // Plan 尺寸规划结果。
@@ -35,10 +51,13 @@ type Plan struct {
 	SourceSize string
 	// Factor 超分倍数：1 = 不超分；2 / 4 = 腾讯数据万象 AI 超分。
 	Factor int
-	// Target 超分目标尺寸（factor>1 时非 nil，用于落盘命名/日志，不强制最终像素）。
+	// Target 目标尺寸。本地改动后为「精确目标」：超分成品会被
+	// imageMogr2/thumbnail 严格缩放到该尺寸。
 	Target *Size
-	// Alias 请求使用的是否为 auto/1k/2k/4k 别名（别名放宽总像素上限）。
+	// Alias 请求使用的是否为 auto/1k/2k/4k 别名。
 	Alias bool
+	// Exact 是否执行精确缩放（显式尺寸或别名命中 2K/4K 时为 true）。
+	Exact bool
 }
 
 // Size 宽高。
@@ -66,12 +85,12 @@ var aliases = map[string]string{
 	"4k": "3840x3840",
 }
 
-// PlanSize 对等 Python size_plan：把请求 size 翻译成（源图尺寸, 超分倍数, 目标尺寸）。
+// PlanSize 把请求 size 翻译成（源图尺寸, 超分倍数, 精确目标尺寸）。
 //
 //	"auto"            → 透传 auto，factor=1
 //	"1k" / ≤1024      → 不超分，源图即目标
-//	"2k" / 1025~2048  → 源图 ≈ 目标 1/2，腾讯 2 倍超分
-//	"4k" / 2049~3840  → 源图 ≈ 目标 1/4，腾讯 4 倍超分
+//	"2k" / 1025~2048  → 源图 ≈ 目标 1/2，腾讯 2 倍超分 → 精确缩放到目标
+//	"4k" / 2049~4096  → 源图 ≈ 目标 1/4，腾讯 4 倍超分 → 精确缩放到目标
 func PlanSize(size string) (*Plan, error) {
 	s := strings.ToLower(strings.TrimSpace(size))
 	if s == "" || s == "auto" {
@@ -89,36 +108,31 @@ func PlanSize(size string) (*Plan, error) {
 	if dim.W <= 0 || dim.H <= 0 || maxDim(dim) > maxLongEdge {
 		return nil, fmt.Errorf("gpt-image-2 的 size 长边必须在 1 到 %d 之间", maxLongEdge)
 	}
-	if dim.W%alignMultiple != 0 || dim.H%alignMultiple != 0 {
-		return nil, fmt.Errorf("gpt-image-2 的 size 宽高必须是 %d 的倍数", alignMultiple)
-	}
 	ratio := float64(maxDim(dim)) / float64(minDim(dim))
-	pixels := dim.W * dim.H
-	if ratio > maxAspect || pixels < minPixels || (pixels > maxPixels && !isAlias) {
-		return nil, fmt.Errorf("gpt-image-2 的 size 需满足宽高比不超过 3:1，总像素为 %d 到 %d", minPixels, maxPixels)
+	if ratio > maxAspect || dim.W*dim.H < minPixels {
+		return nil, fmt.Errorf("gpt-image-2 的 size 需满足宽高比不超过 3:1，总像素不低于 %d", minPixels)
 	}
+	// 目标尺寸：别名归一化到标准值；显式尺寸保持用户原样（不强制 16 倍数）。
+	target := dim
 	if maxDim(dim) <= 1024 {
-		// 1K：不超分。别名 1k 目标 1024x1024；自定义尺寸目标即自身。
-		target := dim
+		// 1K：不超分，源图即目标。
 		if isAlias {
 			target = Size{W: 1024, H: 1024}
 		}
-		return &Plan{SourceSize: dim.String(), Factor: 1, Target: &target, Alias: isAlias}, nil
+		return &Plan{SourceSize: dim.String(), Factor: 1, Target: &target, Alias: isAlias, Exact: true}, nil
 	}
 	factor := 2
 	if maxDim(dim) > 2048 {
 		factor = 4
 	}
-	// 源图尺寸 ≈ 目标 / factor，16 对齐（对等 Python round(w/factor/16)*16），保证最小像素。
+	// 源图尺寸 ≈ 目标 / factor，16 对齐（对等 Python round(w/factor/16)*16）。
 	sw := alignRound(int(math.Round(float64(dim.W)/float64(factor))), alignMultiple)
 	sh := alignRound(int(math.Round(float64(dim.H)/float64(factor))), alignMultiple)
-	// 对齐后可能低于最小像素（长边较小的 16:16 比例），逐步补到下限（对等 Python while 循环）。
-	for sw*sh < minPixels {
-		if sw <= sh {
-			sw += alignMultiple
-		} else {
-			sh += alignMultiple
-		}
+	// 低于最小像素时等比放大（保持宽高比，避免单边 bump 造成拉伸）。
+	if sw*sh < minPixels {
+		scale := math.Sqrt(float64(minPixels) / float64(sw*sh))
+		sw = alignCeil(int(math.Ceil(float64(sw)*scale)), alignMultiple)
+		sh = alignCeil(int(math.Ceil(float64(sh)*scale)), alignMultiple)
 	}
 	// 超过像素上限则等比回缩（极端宽高比场景）。
 	if sw*sh > maxPixels {
@@ -126,9 +140,14 @@ func PlanSize(size string) (*Plan, error) {
 		sw = alignFloor(int(float64(sw)*scale), alignMultiple)
 		sh = alignFloor(int(float64(sh)*scale), alignMultiple)
 	}
-	target := dim
+	// 超分后单边不得超过腾讯云可处理上限。
+	if m := maxDim(Size{W: sw * factor, H: sh * factor}); m > upscaleCeiling {
+		scale := float64(upscaleCeiling) / float64(m)
+		sw = alignFloor(int(float64(sw)*scale), alignMultiple)
+		sh = alignFloor(int(float64(sh)*scale), alignMultiple)
+	}
 	source := Size{W: sw, H: sh}
-	return &Plan{SourceSize: source.String(), Factor: factor, Target: &target, Alias: isAlias}, nil
+	return &Plan{SourceSize: source.String(), Factor: factor, Target: &target, Alias: isAlias, Exact: true}, nil
 }
 
 func maxDim(s Size) int {
@@ -145,7 +164,7 @@ func minDim(s Size) int {
 	return s.H
 }
 
-// alignRound 四舍五入到 align 倍数，最小 align（对等 Python round(v/16)*16 与 max(16,...)）。
+// alignRound 四舍五入到 align 倍数，最小 align。
 func alignRound(v, align int) int {
 	out := int(math.Round(float64(v)/float64(align))) * align
 	if out < align {
@@ -154,11 +173,20 @@ func alignRound(v, align int) int {
 	return out
 }
 
-// alignFloor 向下取整到 align 倍数，最小 16。
+// alignFloor 向下取整到 align 倍数，最小 align。
 func alignFloor(v, align int) int {
 	out := (v / align) * align
 	if out < align {
 		out = align
 	}
+	return out
+}
+
+// alignCeil 向上取整到 align 倍数，最小 align。
+func alignCeil(v, align int) int {
+	if v <= align {
+		return align
+	}
+	out := ((v + align - 1) / align) * align
 	return out
 }

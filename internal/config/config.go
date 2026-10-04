@@ -71,12 +71,12 @@ type SchedulerConfig struct {
 
 // ProxyRuntimeConfig 出站代理运行时（对等 proxy_runtime；Go 版 backend tls-client 透传 proxy_url）。
 type ProxyRuntimeConfig struct {
-	Enabled            bool     `json:"enabled"`
-	EgressMode         string   `json:"egress_mode"` // direct | proxy
-	ProxyURL           string   `json:"proxy_url"`
-	ResourceProxyURL   string   `json:"resource_proxy_url"`
-	SkipSSLVerify      bool     `json:"skip_ssl_verify"`
-	ResetSessionStatus []int    `json:"reset_session_status_codes"`
+	Enabled            bool   `json:"enabled"`
+	EgressMode         string `json:"egress_mode"` // direct | proxy
+	ProxyURL           string `json:"proxy_url"`
+	ResourceProxyURL   string `json:"resource_proxy_url"`
+	SkipSSLVerify      bool   `json:"skip_ssl_verify"`
+	ResetSessionStatus []int  `json:"reset_session_status_codes"`
 }
 
 // ClearanceConfig CF 验证配置（存储透传，真实 clearance 刷新未实现，见 TASKS.md）。
@@ -106,10 +106,10 @@ type ImageStorageConfig struct {
 
 // ChatCompletionCacheConfig 对话缓存 normalize 开关（对等 chat_completion_cache 部分键）。
 type ChatCompletionCacheConfig struct {
-	Enabled               bool `json:"enabled"`
-	NormalizeMessages     bool `json:"normalize_messages"`
+	Enabled                bool `json:"enabled"`
+	NormalizeMessages      bool `json:"normalize_messages"`
 	DropAdjacentDuplicates bool `json:"drop_adjacent_duplicates"`
-	DropAssistantHistory  bool `json:"drop_assistant_history"`
+	DropAssistantHistory   bool `json:"drop_assistant_history"`
 }
 
 // AIReviewConfig AI 审核链路（对等 ai_review；调用未实现，配置透传）。
@@ -131,10 +131,10 @@ type BackupConfig struct {
 
 // ImageGenerationConfig 生图总开关与模型白名单（对等 image_generation 部分键）。
 type ImageGenerationConfig struct {
-	Enabled          bool     `json:"enabled"`
-	SupportedModels  []string `json:"supported_models"`
-	OutputFormat     string   `json:"output_format"` // b64_json | url
-	explicit         bool     // JSON 中出现过该段（区分"显式禁用"与"零值未配置"）
+	Enabled         bool     `json:"enabled"`
+	SupportedModels []string `json:"supported_models"`
+	OutputFormat    string   `json:"output_format"` // b64_json | url
+	explicit        bool     // JSON 中出现过该段（区分"显式禁用"与"零值未配置"）
 }
 
 // UnmarshalJSON 记录段落出现（门控只对显式 enabled=false 生效）。
@@ -171,17 +171,20 @@ type SuperResolutionConfig struct {
 	OutputFormat string `json:"output_format"`
 	// 转码质量 60~95（默认 85）。
 	OutputQuality int `json:"output_quality"`
+	// 精确尺寸开关：默认 false = 超分后追加 imageMogr2/thumbnail/WxH! 严格缩放到请求尺寸；
+	// 置 true 则保持旧行为（成品尺寸为 源图×factor 的近似值）。
+	DisableExactSize bool `json:"disable_exact_size"`
 }
 
 // QuotaLimitsConfig 配额上限（对等 quota_limits；-1 不限；强制执行未实现，配置透传）。
 type QuotaLimitsConfig struct {
-	Enabled           bool `json:"enabled"`
-	FastDailyLimit    int  `json:"fast_daily_limit"`
-	ThinkingDailyLimit int `json:"thinking_daily_limit"`
-	ProDailyLimit     int  `json:"pro_daily_limit"`
-	ImageDailyLimit   int  `json:"image_daily_limit"`
-	MusicDailyLimit   int  `json:"music_daily_limit"`
-	VideoDailyLimit   int  `json:"video_daily_limit"`
+	Enabled            bool `json:"enabled"`
+	FastDailyLimit     int  `json:"fast_daily_limit"`
+	ThinkingDailyLimit int  `json:"thinking_daily_limit"`
+	ProDailyLimit      int  `json:"pro_daily_limit"`
+	ImageDailyLimit    int  `json:"image_daily_limit"`
+	MusicDailyLimit    int  `json:"music_daily_limit"`
+	VideoDailyLimit    int  `json:"video_daily_limit"`
 }
 
 // Config 全局配置。字段名与 Python 版 config.json 键名保持一致，方便直接迁移。
@@ -226,13 +229,13 @@ func defaults() *Config {
 		StorageType: "json",
 		DataDir:     "./data",
 		Poll: PollConfig{
-			InitialWaitSecs:  0.3,
-			IntervalSecs:     1.0,
-			MaxIntervalSecs:  5.0,
-			TimeoutSecs:      60.0,
+			InitialWaitSecs:   0.3,
+			IntervalSecs:      1.0,
+			MaxIntervalSecs:   5.0,
+			TimeoutSecs:       60.0,
 			StreamTimeoutSecs: 80.0,
-			SettleSecs:       1.0,
-			SettleEnabled:    true,
+			SettleSecs:        1.0,
+			SettleEnabled:     true,
 		},
 		Account: AccountConfig{
 			Concurrency:           1,
@@ -537,6 +540,10 @@ func applySuperResolution(cfg *Config, m map[string]any) {
 	}
 	if v, ok := m["output_quality"].(float64); ok {
 		cfg.SuperResolution.OutputQuality = int(v)
+	}
+	// 精确尺寸开关（面板/脚本可热更；缺省保持当前值）
+	if v, ok := m["disable_exact_size"].(bool); ok {
+		cfg.SuperResolution.DisableExactSize = v
 	}
 }
 

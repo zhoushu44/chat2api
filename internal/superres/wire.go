@@ -26,15 +26,16 @@ func FromConfig() *Config {
 	}
 	sr := cfg.SuperResolution
 	return &Config{
-		Enabled:        sr.Enabled,
-		SecretID:       sr.SecretID,
-		SecretKey:      sr.SecretKey,
-		Bucket:         sr.Bucket,
-		Region:         sr.Region,
-		PublicBaseURL:  sr.PublicBaseURL,
-		UploadEndpoint: sr.UploadEndpoint,
-		OutputFormat:   sr.OutputFormat,
-		OutputQuality:  sr.OutputQuality,
+		Enabled:          sr.Enabled,
+		SecretID:         sr.SecretID,
+		SecretKey:        sr.SecretKey,
+		Bucket:           sr.Bucket,
+		Region:           sr.Region,
+		PublicBaseURL:    sr.PublicBaseURL,
+		UploadEndpoint:   sr.UploadEndpoint,
+		OutputFormat:     sr.OutputFormat,
+		OutputQuality:    sr.OutputQuality,
+		DisableExactSize: sr.DisableExactSize,
 	}
 }
 
