@@ -19,35 +19,42 @@ type AccountQuota struct {
 	PlanType string
 }
 
-// quotaPath 探测图片额度的官方路径。
-// ChatGPT web 端 rate_limits 汇总接口，image_gen 下含 used/limit 等字段。
-const quotaPath = "/backend-api/rate_limits"
+// conversationInitPath 探测图片额度的官方路径。
+// POST /backend-api/conversation/init 响应 limits_progress[] 里 feature_name=="image_gen"
+// 的 remaining 即图片剩余额度（reset_after 为恢复时间）。
+// 注：旧的 GET /backend-api/rate_limits?feature=image_gen 已下线（404）。
+const conversationInitPath = "/backend-api/conversation/init"
+
+// conversationInitBody 探测额度用的固定请求体（对等 Python _get_conversation_init）。
+var conversationInitBody = []byte(`{"gizmo_id":null,"requested_default_model":null,"conversation_id":null,"timezone_offset_min":-480}`)
 
 // FetchAccountQuota 拉取账号远程图片额度（对等 Python refresh_accounts 单号探测）。
-// 探测链路：GET /backend-api/rate_limits?feature=image_gen
+// 探测链路：POST /backend-api/conversation/init
 // 返回 401 → OK=false（token 失效，调用方按验活失败语义处理）。
 func (b *Backend) FetchAccountQuota(ctx context.Context) (AccountQuota, error) {
-	full := b.BaseURL + quotaPath + "?feature=image_gen"
-	headers := b.RequestHeaders(quotaPath, map[string]string{"Accept": "application/json"})
+	headers := b.RequestHeaders(conversationInitPath, map[string]string{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	})
 	reqCtx, cancel := context.WithTimeout(ctx, 25*time.Second)
 	defer cancel()
-	resp, body, err := b.doJSONRequest(reqCtx, fhttp.MethodGet, full, headers, nil)
+	resp, body, err := b.doJSONRequest(reqCtx, fhttp.MethodPost, b.BaseURL+conversationInitPath, headers, conversationInitBody)
 	if err != nil {
 		return AccountQuota{}, err
 	}
-	if err := ensureOK(resp.StatusCode, resp.Header.Get("Retry-After"), body, quotaPath, "account"); err != nil {
+	if err := ensureOK(resp.StatusCode, resp.Header.Get("Retry-After"), body, conversationInitPath, "account"); err != nil {
 		return AccountQuota{}, err
 	}
 	return parseAccountQuota(body)
 }
 
-// parseAccountQuota 解析 rate_limits 响应（容错：上游字段形状随版本漂移）。
+// parseAccountQuota 解析 conversation/init 响应（容错：上游字段形状随版本漂移）。
 // 已知形状（2026-09 实测）：
 //
-//	{"rate_limits":[{"feature":"image_gen","used_metric":3,"max_limit":100,
-//	 "quota_type":"primary","resets_in":1800.0}, ...]}
+//	{"limits_progress":[{"feature_name":"image_gen","remaining":25,
+//	 "reset_after":"2026-10-08T00:00:00Z"}, ...]}
 //
-// 兼容旧形状：{"image_gen":{"used":..,"limit":..}} 或顶层 {"rate_limits":{...}}。
+// 未命中 image_gen 项或形状不识别 → OK=true + Quota=0（quota_unknown 语义，不报错）。
 func parseAccountQuota(body []byte) (AccountQuota, error) {
 	var raw map[string]any
 	if err := json.Unmarshal(body, &raw); err != nil {
@@ -57,11 +64,7 @@ func parseAccountQuota(body []byte) (AccountQuota, error) {
 	if plan := quotaPlanFrom(raw); plan != "" {
 		out.PlanType = plan
 	}
-	if q, ok := quotaFromRateLimits(raw); ok {
-		out.Quota = q
-		return out, nil
-	}
-	if q, ok := quotaFromImageGenMap(raw); ok {
+	if q, ok := quotaFromLimitsProgress(raw); ok {
 		out.Quota = q
 		return out, nil
 	}
@@ -70,9 +73,9 @@ func parseAccountQuota(body []byte) (AccountQuota, error) {
 	return out, nil
 }
 
-// quotaFromRateLimits 新形状：rate_limits 为数组，找 feature=image_gen 项。
-func quotaFromRateLimits(raw map[string]any) (int, bool) {
-	arr, ok := raw["rate_limits"].([]any)
+// quotaFromLimitsProgress 从 limits_progress[] 找 feature_name=image_gen 项的 remaining。
+func quotaFromLimitsProgress(raw map[string]any) (int, bool) {
+	arr, ok := raw["limits_progress"].([]any)
 	if !ok {
 		return 0, false
 	}
@@ -81,47 +84,17 @@ func quotaFromRateLimits(raw map[string]any) (int, bool) {
 		if !ok {
 			continue
 		}
-		feat, _ := m["feature"].(string)
-		if !strings.Contains(strings.ToLower(feat), "image") {
+		feat, _ := m["feature_name"].(string)
+		if !strings.EqualFold(strings.TrimSpace(feat), "image_gen") {
 			continue
 		}
-		limit := quotaFloat(m, "max_limit", "limit")
-		used := quotaFloat(m, "used_metric", "used")
-		if limit <= 0 && used <= 0 {
-			continue
-		}
-		remaining := limit - used
+		remaining := quotaFloat(m, "remaining")
 		if remaining < 0 {
 			remaining = 0
-		}
-		// limit=0 且 used=0：上游明确「无配额」
-		if limit == 0 {
-			return 0, true
 		}
 		return int(remaining), true
 	}
 	return 0, false
-}
-
-// quotaFromImageGenMap 旧形状：image_gen 为对象 {used, limit}。
-func quotaFromImageGenMap(raw map[string]any) (int, bool) {
-	m, ok := raw["image_gen"].(map[string]any)
-	if !ok {
-		return 0, false
-	}
-	limit := quotaFloat(m, "limit", "max_limit")
-	used := quotaFloat(m, "used", "used_metric")
-	if limit == 0 {
-		return 0, true
-	}
-	if limit < 0 {
-		return -1, true // 无限额度哨兵
-	}
-	remaining := limit - used
-	if remaining < 0 {
-		remaining = 0
-	}
-	return int(remaining), true
 }
 
 // quotaPlanFrom 从响应里提取 plan 类型（chatgpt 官网 /me 的 plan 字段口径）。

@@ -1,6 +1,6 @@
 // Package refresh 账号额度刷新服务（对等 Python refresh_accounts）。
 //
-// 语义：并发对每个账号探测远程图片额度（GET /backend-api/rate_limits），
+// 语义：并发对每个账号探测远程图片额度（POST /backend-api/conversation/init），
 // 成功则回写 Account.Quota（号池 + 持久化），失败记入 errors 不阻断整批。
 // 进度可轮询：POST /api/accounts/refresh 返回 progress_id，
 // GET /api/accounts/refresh/progress/:id 查询（前端 refreshAndPoll 契约）。

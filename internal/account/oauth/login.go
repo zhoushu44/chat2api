@@ -1,6 +1,7 @@
 package oauth
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,12 +10,11 @@ import (
 	"strings"
 
 	"chatgpt2api/internal/backend"
-	"chatgpt2api/internal/backend/antibot"
 
-	"github.com/google/uuid"
 	fhttp "github.com/bogdanfinn/fhttp"
 	tls_client "github.com/bogdanfinn/tls-client"
 	"github.com/bogdanfinn/tls-client/profiles"
+	"github.com/google/uuid"
 )
 
 // 对等探针 regiforge/scripts/probe_login_browser.py 已验证的协议登录全链路：
@@ -50,7 +50,13 @@ func LoginWithPassword(email string, password string, totpSecret string, proxy s
 	if err != nil {
 		return nil, fmt.Errorf("client: %w", err)
 	}
-	c := &loginClient{http: httpClient, refer: loginChatBase + "/", log: logFn}
+	c := &loginClient{
+		http:     httpClient,
+		refer:    loginChatBase + "/",
+		log:      logFn,
+		deviceID: uuid.NewString(),
+		sentinel: newSentinelSolver(httpClient, loginUA, logFn),
+	}
 
 	// 1) csrf
 	csrf, err := c.getString(loginChatBase + "/api/auth/csrf")
@@ -185,9 +191,11 @@ func (c *loginClient) sessionCookie() string {
 // ── 底层会话 ─────────────────────────────────────────────────────
 
 type loginClient struct {
-	http  tls_client.HttpClient
-	refer string
-	log   func(string)
+	http     tls_client.HttpClient
+	refer    string
+	log      func(string)
+	deviceID string
+	sentinel sentinelSolver
 }
 
 func (c *loginClient) stdHeaders(method, accept, refer, origin string) fhttp.Header {
@@ -328,10 +336,19 @@ func (c *loginClient) postJSONRaw(url, body string) (*fhttp.Response, error) {
 	h := c.stdHeaders("POST", "application/json",
 		c.referOr(loginAuthBase+"/log-in"), loginAuthBase)
 	h.Set("Content-Type", "application/json")
-	// OpenAI auth API（除 signin 外）要求 sentinel token 头（浏览器每次都带）
+	// OpenAI auth API（除 signin 外）要求 sentinel token 头（浏览器每次都带）。
+	// 必须用真 sdk.js 求解：本地伪造 token 能过表面校验，但 password/verify 等服务端深校验会拒。
 	if strings.Contains(url, loginAuthBase+"/api/accounts/") {
-		gen := antibot.NewSentinelTokenGenerator(uuid.NewString(), loginUA)
-		h.Set("openai-sentinel-token", gen.GenerateRequirementsToken())
+		tok, so, err := c.sentinel.Solve(context.Background(), c.deviceID, sentinelFlow)
+		if err != nil {
+			return nil, fmt.Errorf("sentinel 求解: %w", err)
+		}
+		if tok != "" {
+			h.Set("openai-sentinel-token", tok)
+		}
+		if so != "" {
+			h.Set("openai-sentinel-so-token", so)
+		}
 	}
 	req.Header = h
 	resp, err := c.http.Do(req)
@@ -386,5 +403,3 @@ func mustJSON(s string) string {
 	}
 	return string(j)
 }
-
-
