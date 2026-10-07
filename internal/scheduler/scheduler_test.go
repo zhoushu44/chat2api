@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -25,9 +26,12 @@ func TestDoDaily401RemovesDead(t *testing.T) {
 	var checked atomic.Int32
 	s := New(pool, 3, 4, "UTC", true)
 	s.Svc = svc
-	s.CheckValid = func(a *account.Account) bool {
+	s.CheckValid = func(a *account.Account) error {
 		checked.Add(1)
-		return a.Token == "t-alive"
+		if a.Token == "t-alive" {
+			return nil
+		}
+		return errors.New("401 unauthorized")
 	}
 
 	recovered, removed := s.doDaily401()
@@ -76,7 +80,12 @@ func TestDoDaily401RecoverSuccess(t *testing.T) {
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
 	// 旧 token 失效；新 token 有效
-	s.CheckValid = func(a *account.Account) bool { return a.Token == "t-new" }
+	s.CheckValid = func(a *account.Account) error {
+		if a.Token == "t-new" {
+			return nil
+		}
+		return errors.New("401 unauthorized")
+	}
 	var recoverCalls atomic.Int32
 	s.Recover = func(a *account.Account) (string, string, error) {
 		recoverCalls.Add(1)
@@ -128,7 +137,7 @@ func TestDoDaily401RecoverFail(t *testing.T) {
 	s := New(pool, 3, 4, "UTC", true)
 	s.Svc = svc
 	s.RecoveryEnabled = true
-	s.CheckValid = func(a *account.Account) bool { return false }
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
 	s.Recover = func(a *account.Account) (string, string, error) {
 		return "", "", errors.New("login failed")
 	}
@@ -159,7 +168,7 @@ func TestDoDaily401NoCredsSkipsRecover(t *testing.T) {
 
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true // 启用恢复功能，否则会在无凭据前直接跳过
-	s.CheckValid = func(a *account.Account) bool { return false }
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
 	var recoverCalls atomic.Int32
 	s.Recover = func(a *account.Account) (string, string, error) {
 		recoverCalls.Add(1)
@@ -186,7 +195,7 @@ func TestDoDaily401RecoverThenStillDead(t *testing.T) {
 
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
-	s.CheckValid = func(a *account.Account) bool { return false } // 新旧都失败
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") } // 新旧都失败
 	s.Recover = func(a *account.Account) (string, string, error) {
 		return "t-new", "sess", nil
 	}
@@ -214,7 +223,7 @@ func TestDoDaily401NoRecoverHook(t *testing.T) {
 
 	s := New(pool, 3, 4, "UTC", true)
 	s.Svc = svc
-	s.CheckValid = func(a *account.Account) bool { return false }
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
 	// 不设置 s.Recover
 
 	recovered, removed := s.doDaily401()
@@ -251,7 +260,7 @@ func TestDoDaily401RecoveryDisabled(t *testing.T) {
 
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = false // 开关关闭
-	s.CheckValid = func(a *account.Account) bool { return false }
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
 	var calls atomic.Int32
 	s.Recover = func(a *account.Account) (string, string, error) {
 		calls.Add(1)
@@ -278,7 +287,12 @@ func TestDoDaily401RecoverRetry(t *testing.T) {
 
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
-	s.CheckValid = func(a *account.Account) bool { return a.Token == "t-new" }
+	s.CheckValid = func(a *account.Account) error {
+		if a.Token == "t-new" {
+			return nil
+		}
+		return errors.New("401 unauthorized")
+	}
 	var calls atomic.Int32
 	s.Recover = func(a *account.Account) (string, string, error) {
 		n := calls.Add(1)
@@ -309,7 +323,7 @@ func TestDoDaily401RotatesProxyPerAttempt(t *testing.T) {
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
 	s.RecoverAttempts = 3
-	s.CheckValid = func(a *account.Account) bool { return false } // 永远失败 → 跑满重试
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") } // 永远失败 → 跑满重试
 	var rotations atomic.Int32
 	s.RotateProxy = func() string {
 		rotations.Add(1)
@@ -357,7 +371,12 @@ func TestRecoverRefreshesTokenExpireAt(t *testing.T) {
 	newJWT := "eyJhbGciOiJIUzI1NiJ9.eyJleHAiOjIwMDAwMDAwMDB9.sig"
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
-	s.CheckValid = func(a *account.Account) bool { return a.Token == newJWT }
+	s.CheckValid = func(a *account.Account) error {
+		if a.Token == newJWT {
+			return nil
+		}
+		return errors.New("401 unauthorized")
+	}
 	s.Recover = func(a *account.Account) (string, string, error) {
 		return newJWT, "sess", nil
 	}
@@ -387,7 +406,7 @@ func TestDoDaily401RecoverFakeReviveDisables(t *testing.T) {
 	s := New(pool, 3, 4, "UTC", true)
 	s.RecoveryEnabled = true
 	s.RecoverAttempts = 2
-	s.CheckValid = func(a *account.Account) bool { return false }
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
 	s.Recover = func(a *account.Account) (string, string, error) {
 		return "t-fake", "fake-sess", nil
 	}
@@ -398,5 +417,228 @@ func TestDoDaily401RecoverFakeReviveDisables(t *testing.T) {
 	}
 	if n := len(pool.List()); n != 0 {
 		t.Fatalf("pool=%d want 0", n)
+	}
+}
+
+// TE8：AutoRemoveInvalid 开启 → 恢复失败的号直接从持久化存储删除（不留失效记录）。
+func TestDoDaily401AutoRemoveDeletesRecord(t *testing.T) {
+	dir := t.TempDir()
+	svc := account.New(dir)
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "ar1", Token: "t-old", Email: "ar1@e.com", Type: "Plus", SourceType: "web",
+		Status: account.StatusNormal, Password: "pw", TOTPSecret: "SECRET",
+	}
+	_ = svc.Add(acc)
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.Svc = svc
+	s.RecoveryEnabled = true
+	s.AutoRemoveInvalid = true
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
+	s.Recover = func(a *account.Account) (string, string, error) {
+		return "", "", errors.New("account_deactivated")
+	}
+
+	recovered, removed := s.doDaily401()
+	if recovered != 0 || removed != 1 {
+		t.Fatalf("recovered=%d removed=%d want 0/1", recovered, removed)
+	}
+	if n := len(pool.List()); n != 0 {
+		t.Fatalf("pool=%d want 0", n)
+	}
+	// 持久化存储中该账号应被彻底删除
+	if _, ok := account.New(dir).Get("ar1"); ok {
+		t.Fatalf("account record should be deleted from persistence")
+	}
+}
+
+// TE9：AutoRemoveInvalid 关闭 → 退化为旧行为（失效记录保留）。
+func TestDoDaily401AutoRemoveOffKeepsRecord(t *testing.T) {
+	dir := t.TempDir()
+	svc := account.New(dir)
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "ar2", Token: "t-old", Email: "ar2@e.com", Type: "Plus", SourceType: "web",
+		Status: account.StatusNormal, Password: "pw", TOTPSecret: "SECRET",
+	}
+	_ = svc.Add(acc)
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.Svc = svc
+	s.RecoveryEnabled = true
+	s.AutoRemoveInvalid = false
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
+	s.Recover = func(a *account.Account) (string, string, error) {
+		return "", "", errors.New("account_deactivated")
+	}
+
+	recovered, removed := s.doDaily401()
+	if recovered != 0 || removed != 1 {
+		t.Fatalf("recovered=%d removed=%d want 0/1", recovered, removed)
+	}
+	a, ok := account.New(dir).Get("ar2")
+	if !ok {
+		t.Fatalf("account record should be kept (disabled) when auto-remove off")
+	}
+	if a.Status != account.StatusDisabled {
+		t.Fatalf("status=%s want %s", a.Status, account.StatusDisabled)
+	}
+}
+
+// TE10：收紧语义——未尝试恢复（恢复开关关闭）的号，即使 AutoRemove 开着也只标失效不删除。
+func TestDoDaily401AutoRemoveSkipsUnrecovered(t *testing.T) {
+	dir := t.TempDir()
+	svc := account.New(dir)
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "ar3", Token: "t-old", Email: "ar3@e.com", Type: "Plus", SourceType: "web",
+		Status: account.StatusNormal, Password: "pw", TOTPSecret: "SECRET",
+	}
+	_ = svc.Add(acc)
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.Svc = svc
+	s.RecoveryEnabled = false // 恢复未开启 → 未尝试过恢复，不算「确认不可恢复」
+	s.AutoRemoveInvalid = true
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
+	s.Recover = func(a *account.Account) (string, string, error) {
+		t.Fatal("recover must not be called when RecoveryEnabled=false")
+		return "", "", errors.New("unreachable")
+	}
+
+	recovered, removed := s.doDaily401()
+	if recovered != 0 || removed != 1 {
+		t.Fatalf("recovered=%d removed=%d want 0/1", recovered, removed)
+	}
+	a, ok := account.New(dir).Get("ar3")
+	if !ok {
+		t.Fatalf("account record must be kept (disabled) when recovery was never attempted")
+	}
+	if a.Status != account.StatusDisabled {
+		t.Fatalf("status=%s want %s", a.Status, account.StatusDisabled)
+	}
+}
+
+// TE11：无凭据（无 password/TOTP）的号，即使 AutoRemove 开着也只标失效不删除。
+func TestDoDaily401AutoRemoveSkipsNoCreds(t *testing.T) {
+	dir := t.TempDir()
+	svc := account.New(dir)
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "ar4", Token: "t-old", Email: "ar4@e.com", Type: "Plus", SourceType: "web",
+		Status: account.StatusNormal, // 无凭据
+	}
+	_ = svc.Add(acc)
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.Svc = svc
+	s.RecoveryEnabled = true
+	s.AutoRemoveInvalid = true
+	s.CheckValid = func(a *account.Account) error { return errors.New("401 unauthorized") }
+
+	recovered, removed := s.doDaily401()
+	if recovered != 0 || removed != 1 {
+		t.Fatalf("recovered=%d removed=%d want 0/1", recovered, removed)
+	}
+	a, ok := account.New(dir).Get("ar4")
+	if !ok {
+		t.Fatalf("account record must be kept (disabled) when no creds to attempt recovery")
+	}
+	if a.Status != account.StatusDisabled {
+		t.Fatalf("status=%s want %s", a.Status, account.StatusDisabled)
+	}
+}
+
+// TN1：网络错误（ErrVerifyNetwork）→ 跳过该账号：不标失效、不删除、不恢复、不计移除、池保留。
+// 复现 39 僵尸号根因场景：DNS 故障窗口内验活，账号实为活号却被判死。
+func TestDoDaily401NetworkErrorSkips(t *testing.T) {
+	dir := t.TempDir()
+	svc := account.New(dir)
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "n1", Token: "t-net", Email: "n1@e.com", Type: "Plus", SourceType: "web",
+		Status: account.StatusNormal, Password: "pw", TOTPSecret: "SECRET",
+	}
+	_ = svc.Add(acc)
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.Svc = svc
+	s.RecoveryEnabled = true
+	s.AutoRemoveInvalid = true // 即使开着自动移除，网络错误也不允许删
+	s.CheckValid = func(a *account.Account) error {
+		return fmt.Errorf("%w: dial tcp: lookup chatgpt.com: i/o timeout", ErrVerifyNetwork)
+	}
+	var recoverCalls atomic.Int32
+	s.Recover = func(a *account.Account) (string, string, error) {
+		recoverCalls.Add(1)
+		return "t-new", "", nil
+	}
+
+	recovered, removed := s.doDaily401()
+	if recovered != 0 || removed != 0 {
+		t.Fatalf("recovered=%d removed=%d want 0/0 (network error must skip)", recovered, removed)
+	}
+	if recoverCalls.Load() != 0 {
+		t.Fatalf("recover calls=%d want 0 (network error must not trigger recovery)", recoverCalls.Load())
+	}
+	if n := len(pool.List()); n != 1 {
+		t.Fatalf("pool=%d want 1 (account must stay)", n)
+	}
+	a, ok := account.New(dir).Get("n1")
+	if !ok {
+		t.Fatal("account record must be kept")
+	}
+	if a.Status != account.StatusNormal {
+		t.Fatalf("status=%s want normal (must not be disabled by network error)", a.Status)
+	}
+}
+
+// TN2：恢复拿到新 token 但二次验活遇网络错误 → 回滚重试不判假复活；下次成功 → 复活。
+func TestDoDaily401RecoverSecondVerifyNetworkRetries(t *testing.T) {
+	pool := account.NewPool(nil, 0)
+	acc := &account.Account{
+		ID: "n2", Token: "t-old", Email: "n2@e.com", Status: account.StatusNormal,
+		Password: "pw", TOTPSecret: "SECRET",
+	}
+	pool.Add(acc)
+
+	s := New(pool, 3, 4, "UTC", true)
+	s.RecoveryEnabled = true
+	var verifies atomic.Int32
+	s.CheckValid = func(a *account.Account) error {
+		n := verifies.Add(1)
+		if n == 1 {
+			return errors.New("401 unauthorized") // 首次验活：确认失效 → 走恢复
+		}
+		if n == 2 {
+			return fmt.Errorf("%w: TLS 瞬断", ErrVerifyNetwork) // 二次验活：网络错误 → 回滚重试
+		}
+		return nil // 第二次尝试的二次验活：通过
+	}
+	var recoverCalls atomic.Int32
+	s.Recover = func(a *account.Account) (string, string, error) {
+		recoverCalls.Add(1)
+		return "t-new", "sess", nil
+	}
+
+	recovered, removed := s.doDaily401()
+	if recovered != 1 || removed != 0 {
+		t.Fatalf("recovered=%d removed=%d want 1/0", recovered, removed)
+	}
+	if recoverCalls.Load() != 2 {
+		t.Fatalf("recover calls=%d want 2 (network error should retry, not judge fake-revive)", recoverCalls.Load())
+	}
+	list := pool.List()
+	if len(list) != 1 || list[0].Token != "t-new" {
+		t.Fatalf("pool state wrong: %+v", list)
+	}
+	if list[0].Status != account.StatusNormal {
+		t.Fatalf("status=%s want normal", list[0].Status)
 	}
 }

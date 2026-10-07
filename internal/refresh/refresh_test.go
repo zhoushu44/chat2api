@@ -197,3 +197,86 @@ func TestRefreshAllEmpty(t *testing.T) {
 		t.Fatalf("empty refresh should be done instantly: %+v", p)
 	}
 }
+
+// TR7：探测成功的失效号复活——池内 + 持久化状态均变正常（39 僵尸号修复验证）。
+func TestRefreshAllRevivesDisabled(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestService(dir,
+		func(ctx context.Context, a *account.Account) (backend.AccountQuota, error) {
+			return backend.AccountQuota{OK: true, Quota: 5, PlanType: "Plus"}, nil
+		},
+		&account.Account{Token: "tok-zombie", Email: "z@a.com", Status: account.StatusDisabled},
+	)
+
+	id, _ := svc.RefreshAll(context.Background(), nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := GetProgress(id); p != nil && p.Done {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// 池内复活
+	var pooled *account.Account
+	for _, a := range svc.Pool.List() {
+		if a.Token == "tok-zombie" {
+			pooled = a
+		}
+	}
+	if pooled == nil {
+		t.Fatal("revived account not in pool")
+	}
+	if pooled.Status != account.StatusNormal {
+		t.Fatalf("pool status = %s want normal", pooled.Status)
+	}
+	if pooled.Quota != 5 {
+		t.Fatalf("quota = %d want 5", pooled.Quota)
+	}
+	// 复活后可被 Pick（Available()=true）
+	if svc.Pool.Pick(account.Selector{}) == nil {
+		t.Fatal("revived account should be pickable")
+	}
+	// 持久化复活
+	persisted, ok := account.New(dir).Get(svc.Pool.List()[0].ID)
+	if !ok {
+		t.Fatal("account not persisted")
+	}
+	if persisted.Status != account.StatusNormal {
+		t.Fatalf("persisted status = %s want normal", persisted.Status)
+	}
+}
+
+// TR8：探测失败的失效号保持失效（不会被误复活，也不丢状态）。
+func TestRefreshAllKeepsDisabledOnProbeError(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestService(dir,
+		func(ctx context.Context, a *account.Account) (backend.AccountQuota, error) {
+			return backend.AccountQuota{}, errors.New("401 unauthorized")
+		},
+		&account.Account{Token: "tok-dead", Email: "d@a.com", Status: account.StatusDisabled},
+	)
+
+	id, _ := svc.RefreshAll(context.Background(), nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := GetProgress(id); p != nil && p.Done {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	// 号池中的失效号仍为失效（不可 Pick）
+	for _, a := range svc.Pool.List() {
+		if a.Token == "tok-dead" && a.Status != account.StatusDisabled {
+			t.Fatalf("status = %s want disabled (probe failed)", a.Status)
+		}
+	}
+	if svc.Pool.Pick(account.Selector{}) != nil {
+		t.Fatal("disabled account must not be pickable")
+	}
+	// 持久化也保持失效
+	for _, a := range svc.Accounts.List() {
+		if a.Token == "tok-dead" && a.Status != account.StatusDisabled {
+			t.Fatalf("persisted status = %s want disabled", a.Status)
+		}
+	}
+}

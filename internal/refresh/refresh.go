@@ -183,6 +183,12 @@ func (s *Service) run(ctx context.Context, entry *progressEntry, targets []*acco
 				a.PlanType = q.PlanType
 			}
 			a.CheckedAt = time.Now().Unix()
+			// 探测成功说明 token 能通过上游鉴权：历史标失效的号（如网络故障窗口误杀）
+			// 复活为正常，随 Pool.Add 回池、Accounts.Add 落盘（watcher 5 分钟内同步保留）。
+			if a.Status == account.StatusDisabled {
+				a.Status = account.StatusNormal
+				log.Printf("[refresh] 失效账号探测成功，复活回池 %s", a.Email)
+			}
 			if s.Pool != nil {
 				s.Pool.Add(a)
 			}

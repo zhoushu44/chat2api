@@ -10,8 +10,8 @@ on:
 
 env:
   IMAGE: zhoushu1/chat2api
-  # 大版本号：升级时只改这一行，自动同步 20.1 + latest 双标签
-  TAG_MAJOR: "20.1"
+  # 大版本号：升级时只改这一行，自动同步 21.0 + latest 双标签
+  TAG_MAJOR: "21.0"
 
 jobs:
   build-and-push:

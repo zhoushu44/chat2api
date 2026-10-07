@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -29,6 +30,7 @@ import (
 	"chatgpt2api/internal/refresh"
 	"chatgpt2api/internal/register"
 	"chatgpt2api/internal/scheduler"
+	"chatgpt2api/internal/settings"
 )
 
 func main() {
@@ -61,18 +63,47 @@ func main() {
 	// 启动每日 401 验活调度器，对齐 abai core/scheduler.py；探针用 backend /me
 	sched := scheduler.New(srv.Pool, cfg.Scheduler.Hour, cfg.Scheduler.Concurrency, cfg.Scheduler.Timezone, cfg.Scheduler.Enabled)
 	sched.Svc = srv.Accounts
-	sched.CheckValid = func(a *account.Account) bool {
-		acctCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		be, err := backend.NewBackend(a.Token, a.FP, cfg.EffectiveProxy())
-		if err != nil {
-			return false
+	// 验活探测（三态语义）：nil=活 / ErrVerifyNetwork=网络错误跳过 / 其他=确认失效（401/403）。
+	// 历史 bug：任何错误（含 DNS 超时）都被判死，一次误杀 93 号。现在只有上游明确
+	// 返回 401/403 才算真失效；网络类错误重试一次后仍失败则归为「无法确认」跳过。
+	sched.CheckValid = func(a *account.Account) error {
+		probe := func() error {
+			acctCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			be, err := backend.NewBackend(a.Token, a.FP, cfg.EffectiveProxy())
+			if err != nil {
+				return fmt.Errorf("%w: %v", scheduler.ErrVerifyNetwork, err)
+			}
+			return be.VerifyToken(acctCtx)
 		}
-		return be.VerifyToken(acctCtx) == nil
+		err := probe()
+		if err == nil {
+			return nil
+		}
+		// 真 401/403：确认失效，原样返回
+		var ue *backend.UpstreamHTTPError
+		if errors.As(err, &ue) && (ue.StatusCode == 401 || ue.StatusCode == 403) {
+			return err
+		}
+		// 网络类错误：重试一次（Fix C，防瞬断抖动）
+		err2 := probe()
+		if err2 == nil {
+			return nil
+		}
+		var ue2 *backend.UpstreamHTTPError
+		if errors.As(err2, &ue2) && (ue2.StatusCode == 401 || ue2.StatusCode == 403) {
+			return err2
+		}
+		return fmt.Errorf("%w: %v（重试后仍网络错误）", scheduler.ErrVerifyNetwork, err2)
 	}
 	// D 段：401 验活失败后的协议登录恢复（邮箱+密码+TOTP，不等邮箱 OTP）
 	sched.RecoveryEnabled = cfg.Scheduler.RecoveryEnabled
 	sched.RecoverAttempts = 3 // 网络约 5% 瞬断，重试防「好账号被一次抖动误杀」
+	// 自动移除不可恢复账号：控制台「系统设置 → 自动移除异常账号」开关（settings.json 持久化）
+	if v, ok := settings.NewStore(cfg.DataDir).Snapshot()["auto_remove_invalid_accounts"].(bool); ok {
+		sched.AutoRemoveInvalid = v
+		log.Printf("[Scheduler] 自动移除不可恢复账号：%v", v)
+	}
 	// 每次重试前换出口：代理池优先，回退全局代理（坏出口直接跳过）。
 	// 轮换结果通过闭包变量传给 Recover，保证「本轮选中的出口」被真正使用。
 	var rotatedProxy string

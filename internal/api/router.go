@@ -80,8 +80,12 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	accountsSvc := account.New(dataDir)
 	pool := account.NewPool(nil, 0)
-	// 已持久化账号载入号池
+	// 已持久化账号载入号池（失效号不入池：与 watcher「失效号不加回」语义一致，
+	// 避免每次重启对已知失效号重复跑 401 验活/协议恢复）
 	for _, a := range accountsSvc.List() {
+		if a.Status == account.StatusDisabled {
+			continue
+		}
 		pool.Add(a)
 	}
 	orch := protocol.NewOrchestrator(pool)
@@ -216,7 +220,7 @@ func (s *Server) NewRouter() *gin.Engine {
 	if s.Settings == nil {
 		s.Settings = settings.NewStore(s.dataDir())
 	}
-	(&SettingsHandler{Store: s.Settings}).Register(adminGroup)
+	(&SettingsHandler{Store: s.Settings, Sched: s.Sched}).Register(adminGroup)
 	if s.Tasks != nil {
 		s.RegisterImageTasks(adminGroup)
 	}

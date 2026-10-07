@@ -8,6 +8,7 @@ import (
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/filter"
 	"chatgpt2api/internal/settings"
+	"chatgpt2api/internal/scheduler"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,6 +28,8 @@ var settingsKeyWhitelist = map[string]bool{
 // 存储为 <DataDir>/settings.json，与前端 settingsApi 的报文形状一致（顶层扁平键 + 嵌套段）。
 type SettingsHandler struct {
 	Store *settings.Store
+	// Sched 可选：注入后「自动移除异常账号」开关保存即热生效（无需重启）
+	Sched *scheduler.Scheduler
 }
 
 func (h *SettingsHandler) Register(r *gin.RouterGroup) {
@@ -72,6 +75,11 @@ func (h *SettingsHandler) Save(c *gin.Context) {
 		return
 	}
 	applied := applyRuntime(body)
+	// 自动移除不可恢复账号：热推给调度器，下一轮验活即生效
+	if v, ok := body["auto_remove_invalid_accounts"].(bool); ok && h.Sched != nil {
+		h.Sched.SetAutoRemoveInvalid(v)
+		applied = append(applied, "auto_remove_invalid_accounts")
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"config":           h.Store.Snapshot(),
 		"applied":          applied,
