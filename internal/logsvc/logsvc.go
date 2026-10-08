@@ -10,12 +10,13 @@ import (
 )
 
 type LoggedCall struct {
-	ID        string    `json:"id"`
-	Prompt    string    `json:"prompt"`
-	Model     string    `json:"model"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	Attempts  []Attempt `json:"attempts"`
+	ID         string    `json:"id"`
+	Prompt     string    `json:"prompt"`
+	Model      string    `json:"model"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	DurationMs int64     `json:"duration_ms"`
+	Attempts   []Attempt `json:"attempts"`
 }
 
 type Attempt struct {

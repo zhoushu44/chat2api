@@ -115,6 +115,11 @@ func applyRuntime(data map[string]any) []string {
 		patch["proxy"] = strings.TrimSpace(proxy)
 		applied = append(applied, "proxy")
 	}
+	// 图片保留天数：图片清理器动态读取，保存即生效
+	if days, ok := data["image_retention_days"]; ok && days != nil {
+		patch["image_retention_days"] = days
+		applied = append(applied, "image_retention_days")
+	}
 	if proxyRuntime, ok := data["proxy_runtime"].(map[string]any); ok {
 		patch["proxy_runtime"] = proxyRuntime
 		applied = append(applied, "proxy_runtime")
@@ -123,6 +128,11 @@ func applyRuntime(data map[string]any) []string {
 	if sr, ok := data["super_resolution"].(map[string]any); ok {
 		patch["super_resolution"] = sr
 		applied = append(applied, "super_resolution")
+	}
+	// 图片存档开关（image_storage.enabled）：archiver 动态读取，保存即生效
+	if is, ok := data["image_storage"].(map[string]any); ok {
+		patch["image_storage"] = is
+		applied = append(applied, "image_storage")
 	}
 	config.ApplyRuntime(patch)
 	return applied
@@ -173,6 +183,7 @@ func seedFromConfig(cfg *config.Config) settings.Data {
 		},
 		"image_storage": map[string]any{
 			"enabled":          cfg.ImageStorage.Enabled,
+			"archive_enabled":  cfg.ImageStorage.ArchiveOn(),
 			"mode":             cfg.ImageStorage.Mode,
 			"webdav_url":       cfg.ImageStorage.WebDAVURL,
 			"webdav_username":  cfg.ImageStorage.WebDAVUser,

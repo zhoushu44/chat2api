@@ -1,7 +1,15 @@
 <template>
   <div class="settings-storage-grid">
     <FormSection title="图片存储" class="settings-storage-main">
-      <div class="settings-check-grid settings-check-grid--single">
+      <div class="settings-check-grid">
+        <div class="settings-check-item">
+          <div class="settings-check-control">
+            <Checkbox
+              v-model="imageStorage.archive_enabled"
+              :disabled="fieldReadOnly('image_storage.archive_enabled')"
+            >本地存档（图片管理页数据源）</Checkbox>
+          </div>
+        </div>
         <div class="settings-check-item">
           <div class="settings-check-control">
             <Checkbox

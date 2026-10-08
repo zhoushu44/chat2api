@@ -95,13 +95,22 @@ type ClearanceConfig struct {
 
 // ImageStorageConfig 图片存储（对等 image_storage；mode=local|webdav|both，Go 版 WebDAV 真实可用）。
 type ImageStorageConfig struct {
-	Enabled       bool   `json:"enabled"`
+	Enabled       bool   `json:"enabled"`         // WebDAV 存储开关
+	ArchiveEnabled *bool `json:"archive_enabled"` // 本地存档开关（nil=默认开）；图片管理页数据源
 	Mode          string `json:"mode"`
 	WebDAVURL     string `json:"webdav_url"`
 	WebDAVUser    string `json:"webdav_username"`
 	WebDAVPass    string `json:"webdav_password"`
 	WebDAVRoot    string `json:"webdav_root_path"`
 	PublicBaseURL string `json:"public_base_url"`
+}
+
+// ArchiveOn 本地存档是否开启（未显式配置时默认开）。
+func (c ImageStorageConfig) ArchiveOn() bool {
+	if c.ArchiveEnabled != nil {
+		return *c.ArchiveEnabled
+	}
+	return true
 }
 
 // ChatCompletionCacheConfig 对话缓存 normalize 开关（对等 chat_completion_cache 部分键）。
@@ -441,6 +450,9 @@ func applyOverrides(cfg *Config, over map[string]any) {
 	if m, ok := over["image_generation"].(map[string]any); ok {
 		applyImageGeneration(cfg, m)
 	}
+	if m, ok := over["image_storage"].(map[string]any); ok {
+		applyImageStorage(cfg, m)
+	}
 	if m, ok := over["super_resolution"].(map[string]any); ok {
 		applySuperResolution(cfg, m)
 	}
@@ -478,6 +490,9 @@ func ApplyRuntime(patch map[string]any) {
 	if words, ok := stringSlice(patch["sensitive_words"]); ok {
 		cfg.SensitiveWords = words
 	}
+	if days, ok := number(patch["image_retention_days"]); ok && days >= 1 {
+		cfg.ImageRetentionDays = int(days)
+	}
 	if m, ok := patch["proxy_runtime"].(map[string]any); ok {
 		applyProxyRuntime(cfg, m)
 	}
@@ -486,6 +501,9 @@ func ApplyRuntime(patch map[string]any) {
 	}
 	if m, ok := patch["super_resolution"].(map[string]any); ok {
 		applySuperResolution(cfg, m)
+	}
+	if m, ok := patch["image_storage"].(map[string]any); ok {
+		applyImageStorage(cfg, m)
 	}
 }
 
@@ -499,6 +517,19 @@ func applyImageGeneration(cfg *Config, m map[string]any) {
 	}
 	if v, ok := m["output_format"].(string); ok && v != "" {
 		cfg.ImageGeneration.OutputFormat = v
+	}
+}
+
+// applyImageStorage 图片存储热更：enabled（WebDAV）/archive_enabled（本地存档）/mode 面板保存即生效。
+func applyImageStorage(cfg *Config, m map[string]any) {
+	if v, ok := m["enabled"].(bool); ok {
+		cfg.ImageStorage.Enabled = v
+	}
+	if v, ok := m["archive_enabled"].(bool); ok {
+		cfg.ImageStorage.ArchiveEnabled = &v
+	}
+	if v, ok := m["mode"].(string); ok && strings.TrimSpace(v) != "" {
+		cfg.ImageStorage.Mode = strings.TrimSpace(v)
 	}
 }
 

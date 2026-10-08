@@ -91,6 +91,11 @@ func NewServer(cfg *config.Config) *Server {
 	orch := protocol.NewOrchestrator(pool)
 	orch.Accounts = accountsSvc // auth 失效除名落盘（watcher 同步移除）
 	orch.Logger = logsvc.NewWithDir(dataDir, 1000)
+	orch.Archiver = &protocol.ImageArchiver{
+		DataDir: dataDir,
+		// 本地存档开关动态求值（image_storage.archive_enabled，默认开）：面板保存即生效
+		EnabledFunc: func() bool { return config.Get().ImageStorage.ArchiveOn() },
+	}
 	metSvc := metrics.NewWithDir(dataDir)
 	orch.Metrics = metSvc
 	if cfg != nil {

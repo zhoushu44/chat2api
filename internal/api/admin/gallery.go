@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 
+	"chatgpt2api/internal/imageclean"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -324,8 +326,16 @@ func (h *GalleryHandler) Compress(c *gin.Context) {
 }
 
 // CleanupToTarget POST /api/images/storage/cleanup-to-target?target_free_mb&dry_run
+// 手动清理入口：按保留天数清过期目录（与后台 Cleaner 同一套规则）。
 func (h *GalleryHandler) CleanupToTarget(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"success": true, "deleted": 0, "dry_run": c.Query("dry_run") == "true"})
+	cl := &imageclean.Cleaner{DataDir: h.DataDir}
+	if c.Query("dry_run") == "true" {
+		c.JSON(http.StatusOK, gin.H{"success": true, "deleted": 0, "dry_run": true,
+			"message": "预览模式：实际清理按保留天数由后台定时执行"})
+		return
+	}
+	removed := cl.CleanupOnce()
+	c.JSON(http.StatusOK, gin.H{"success": true, "deleted": removed, "dry_run": false})
 }
 
 // isSubPath 防越权：full 必须位于 base 目录内。

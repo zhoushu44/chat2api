@@ -238,6 +238,7 @@ export function normalizeSettings(raw: RawSettings | null | undefined): Settings
     },
     image_storage: {
       enabled: boolValue(imageStorage.enabled, false),
+      archive_enabled: boolValue((imageStorage as Record<string, unknown>).archive_enabled, true),
       mode: ['webdav', 'both'].includes(cleanString(imageStorage.mode)) ? cleanString(imageStorage.mode) : 'local',
       webdav_url: cleanString(imageStorage.webdav_url),
       webdav_username: cleanString(imageStorage.webdav_username),

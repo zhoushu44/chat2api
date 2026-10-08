@@ -86,11 +86,22 @@ func (h *LogsHandler) List(c *gin.Context) {
 		if status == "" {
 			status = "success"
 		}
+		// 统一状态口径：写入侧失败时为 "error"，前端契约使用 "failed"。
+		limited := strings.Contains(strings.ToLower(status), "limit")
+		failed := !strings.EqualFold(status, "success") && !limited
+		if failed {
+			status = "failed"
+		}
+		// 成功调用在 Attempts[0].Code 里写的是 "ok"，它并非错误码。
+		// 若原样输出到 error/error_code，前端只要该字段非空就会判为失败。
+		if !failed {
+			errCode = ""
+		}
 		level := "INFO"
 		switch {
-		case status == "failed" || errCode != "":
+		case failed:
 			level = "ERROR"
-		case strings.Contains(strings.ToLower(status), "limit"):
+		case limited:
 			level = "WARNING"
 		}
 		item := gin.H{
@@ -103,6 +114,7 @@ func (h *LogsHandler) List(c *gin.Context) {
 				"endpoint":        endpoint,
 				"model":           lc.Model,
 				"status":          status,
+				"duration_ms":     lc.DurationMs,
 				"error":           errCode,
 				"error_code":      errCode,
 				"conversation_id": lc.ID,

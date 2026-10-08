@@ -25,6 +25,7 @@ import (
 	"chatgpt2api/internal/autotune"
 	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/config"
+	"chatgpt2api/internal/imageclean"
 	"chatgpt2api/internal/proxy"
 	"chatgpt2api/internal/provider"
 	"chatgpt2api/internal/refresh"
@@ -142,6 +143,11 @@ func main() {
 	}
 	// 注入到路由（/api/scheduler GET/PUT，账号页开关用）
 	srv.Sched = sched
+
+	// 图片自动清理：每小时巡检，按 image_retention_days（设置面板可改）删过期目录
+	imgClean := imageclean.Cleaner{DataDir: cfg.DataDir}
+	imgClean.Start()
+	defer imgClean.Stop()
 
 	// 账号额度周期同步（refresh_account_interval_minute 驱动，默认 60 分钟）：
 	// 全量探测远程图片额度回写号池，修复「剩余额度」展示口径。

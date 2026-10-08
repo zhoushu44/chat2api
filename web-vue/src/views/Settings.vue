@@ -389,7 +389,10 @@
 
       <div v-else-if="activeSettingsTab === 'storage'" class="grid gap-4 xl:grid-cols-3">
         <FormSection title="图片存储" class="xl:col-span-2">
-          <div class="settings-check-grid settings-check-grid--single">
+          <div class="settings-check-grid">
+            <div class="settings-check-item">
+              <Checkbox v-model="localSettings.image_storage.archive_enabled">本地存档（图片管理页数据源）</Checkbox>
+            </div>
             <div class="settings-check-item">
               <Checkbox v-model="localSettings.image_storage.enabled">启用 WebDAV 图片存储</Checkbox>
             </div>

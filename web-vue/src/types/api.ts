@@ -147,6 +147,7 @@ export interface Settings {
   }
   image_storage?: {
     enabled: boolean
+    archive_enabled: boolean
     mode: 'local' | 'webdav' | 'both'
     webdav_url: string
     webdav_username: string
