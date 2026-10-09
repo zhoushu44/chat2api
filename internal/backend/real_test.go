@@ -3,7 +3,12 @@ package backend
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -347,5 +352,131 @@ func TestBootstrapCacheFresh(t *testing.T) {
 	be.bootstrapAt = time.Now()
 	if be.bootstrapFresh() {
 		t.Fatal("empty sources should not be fresh")
+	}
+}
+
+// tinyPNG 生成 1x1 真实 PNG 字节的 data URL（UploadImage 的 probeImage 需可解码图片）。
+func tinyPNG(t *testing.T) string {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 255, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+}
+
+// 回归：SSE 回显用户消息会带参考图 asset_pointer，parser 会把参考图 FileID
+// 捕获进 fileIDs。GenerateImage 必须把参考图 FileID 从 initialFileIDs 和最终
+// 返回的 fileIDs 中排除——否则 ResolveImageURLs 把参考图排在 index 0，
+// edits/generations n=1 取 B64[0] 时返回参考图本身（批量套图重复根因）。
+func TestGenerateImageExcludesReferenceFileIDs(t *testing.T) {
+	convID := "conv-ref-echo-1"
+	const refFileID = "file-ref-1"
+	const genFileID = "file-gen-1"
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == "GET" && r.URL.Path == "/":
+			w.Header().Set("Content-Type", "text/html")
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`<html><script src="/backend-api/sentinel/sdk.js"></script></html>`))
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/sentinel/chat-requirements/prepare"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"prepare_token": "prep-tok",
+				"arkose":        map[string]any{"required": false},
+				"proofofwork":   map[string]any{"required": false},
+				"turnstile":     map[string]any{"required": false},
+			})
+		case r.Method == "POST" && strings.HasSuffix(r.URL.Path, "/sentinel/chat-requirements/finalize"):
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"token": "sentinel-final-token", "so_token": "so-1"})
+		case r.Method == "POST" && r.URL.Path == "/backend-api/files":
+			// 上传第一步：返回参考图 file_id（真实链路中由上游分配）
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"file_id":    refFileID,
+				"upload_url": "http://" + r.Host + "/blob/upload",
+			})
+		case r.Method == "PUT" && strings.HasPrefix(r.URL.Path, "/blob/upload"):
+			w.WriteHeader(200)
+		case r.Method == "POST" && strings.HasPrefix(r.URL.Path, "/backend-api/files/") && strings.HasSuffix(r.URL.Path, "/uploaded"):
+			w.WriteHeader(200)
+			_, _ = w.Write([]byte(`{}`))
+		case r.Method == "POST" && r.URL.Path == "/backend-api/f/conversation/prepare":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"conduit_token": "conduit-xyz"})
+		case r.Method == "POST" && r.URL.Path == "/backend-api/f/conversation":
+			w.Header().Set("Content-Type", "text/event-stream")
+			w.WriteHeader(200)
+			flusher, _ := w.(http.Flusher)
+			// 帧 1: 回显用户消息——参考图 asset_pointer（污染源，排最前）
+			_, _ = w.Write([]byte(fmt.Sprintf(
+				`data: {"v":{"message":{"author":{"role":"user"},"content":{"content_type":"multimodal_text","parts":[{"asset_pointer":"file-service://%s","content_type":"image_asset_pointer"}]}},"conversation_id":"%s"}}`+"\n\n",
+				refFileID, convID)))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			// 帧 2: 生成结果 tool_args asset pointer
+			_, _ = w.Write([]byte(fmt.Sprintf(
+				`data: {"v":{"type":"tool_args","arguments":"{\"asset_pointer\":\"file-service://%s\"}","conversation_id":"%s"}}`+"\n\n",
+				genFileID, convID)))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			// 帧 3: 终止标记
+			_, _ = w.Write([]byte(fmt.Sprintf(
+				`data: {"v":{"message":{"status":"finished_successfully","metadata":{"is_complete":true}},"conversation_id":"%s"}}`+"\n\n",
+				convID)))
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(30 * time.Millisecond)
+		case r.Method == "GET" && strings.HasPrefix(r.URL.Path, "/backend-api/conversation/"):
+			// doc 轮询：assistant 角色只回生成图（防御性二次剔除的验证点）
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"mapping": map[string]any{
+					"msg1": map[string]any{
+						"message": map[string]any{
+							"author":   map[string]any{"role": "assistant"},
+							"metadata": map[string]any{},
+							"content": map[string]any{
+								"content_type": "image_asset_pointer",
+								"asset_pointer": "file-service://" + genFileID,
+							},
+							"create_time": float64(time.Now().UnixMilli()) / 1000,
+						},
+					},
+				},
+				"file_ids": []string{genFileID},
+			})
+		default:
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"error":"not found: ` + r.URL.Path + `"}`))
+		}
+	}))
+	defer srv.Close()
+
+	backend := newTestBackend(srv)
+	policy := PollPolicy{
+		InitialWait:   5 * time.Millisecond,
+		Interval:      5 * time.Millisecond,
+		MaxInterval:   20 * time.Millisecond,
+		Timeout:       3 * time.Second,
+		Settle:        5 * time.Millisecond,
+		StreamTimeout: 2 * time.Second,
+	}
+
+	// 带参考图：mock 上游在 SSE 流内先回显参考图指针、再给生成图指针
+	result, err := backend.GenerateImage(context.Background(), "edit this", "gpt-image-2", []string{tinyPNG(t)}, policy)
+	if err != nil {
+		t.Fatalf("GenerateImage failed: %v", err)
+	}
+	// 断言：FileIDs 只含生成图，参考图被排除
+	if len(result.FileIDs) != 1 || result.FileIDs[0] != genFileID {
+		t.Fatalf("FileIDs=%v want [%s] (reference image %s must be excluded)", result.FileIDs, genFileID, refFileID)
 	}
 }

@@ -449,11 +449,29 @@ func (b *Backend) GenerateImage(ctx context.Context, prompt, model string, image
 	}
 
 	// 6. poll
+	// 排除参考图 FileID：SSE 会回显用户消息（含参考图 asset_pointer），
+	// parser 会把参考图 ID 捕获进 fileIDs；不排除会导致 ResolveImageURLs
+	// 把参考图排在 index 0，edits/generations n=1 取 B64[0] 时返回参考图
+	// 本身（批量套图重复根因）。
+	refIDs := make(map[string]struct{}, len(refs))
+	for _, r := range refs {
+		refIDs[r.FileID] = struct{}{}
+	}
+	notRef := func(ids []string) []string {
+		out := make([]string, 0, len(ids))
+		for _, id := range ids {
+			if _, ok := refIDs[id]; !ok {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
 	pollStart := time.Now()
-	fileIDs, sedimentIDs, err := PollFileIDs(ctx, b, conversationID, policy, parser.FileIDs(), nil, timing)
+	fileIDs, sedimentIDs, err := PollFileIDs(ctx, b, conversationID, policy, notRef(parser.FileIDs()), nil, timing)
 	if err != nil {
 		return nil, err
 	}
+	fileIDs = notRef(fileIDs) // 防御：doc 轮询合并的 ID 中再剔除参考图
 	_ = pollStart
 
 	timing.TotalMs = time.Since(startAll).Milliseconds()
