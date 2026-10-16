@@ -66,7 +66,7 @@ scope  string
 "invalid_image_input": {400, "request"},
 "upstream_text_reply": {400, "request"},
 "no_image_generated": {502, "request"},
-"unsupported_model": {400, "request"},
+"unsupported_model": {400, "account"},
 "image_download_failed": {502, "delivery"},
 "task_interrupted": {503, "request"},
 "no_available_account": {503, "transient"},

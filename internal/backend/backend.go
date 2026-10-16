@@ -6,6 +6,7 @@ package backend
 import (
 	"context"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -38,8 +39,11 @@ type Backend struct {
 }
 
 // NewBackend 创建后端客户端：指纹按账号覆盖合并（对等 __init__:207-281）。
+// fix9: 指纹基座按账号稳定派生（UA/平台 6 选 1），fpOverride 优先级最高（账号持久化 fp 字段）。
 func NewBackend(accessToken string, fpOverride map[string]string, proxy string) (*Backend, error) {
-	httpClient, err := NewClient(profiles.Chrome_110, proxy)
+	fp := FingerprintForAccount(accessToken).Merge(fpOverride)
+	tlsProfile := tlsProfileFor(fp.Impersonate)
+	httpClient, err := NewClient(tlsProfile, proxy)
 	if err != nil {
 		return nil, err
 	}
@@ -48,9 +52,19 @@ func NewBackend(accessToken string, fpOverride map[string]string, proxy string) 
 		AccessToken:       accessToken,
 		clientVersion:     DefaultClientVersion,
 		clientBuildNumber: DefaultClientBuildNumber,
-		fp:                DefaultFingerprint().Merge(fpOverride),
+		fp:                fp,
 		http:              httpClient,
 	}, nil
+}
+
+// tlsProfileFor impersonate 名 → TLS profile（未知值回退 Chrome_110，保持现有行为）。
+func tlsProfileFor(impersonate string) profiles.ClientProfile {
+	switch strings.ToLower(strings.TrimSpace(impersonate)) {
+	case "chrome146", "chrome_146":
+		return profiles.Chrome_131
+	default:
+		return profiles.Chrome_110
+	}
 }
 
 // NewClient 创建带指定指纹 profile 的 HTTP 客户端（对等 impersonate 参数）。

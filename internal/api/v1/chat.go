@@ -16,6 +16,10 @@ func newChatID() string { return uuid.NewString() }
 func nowUnix() int64    { return time.Now().Unix() }
 
 func isImageChatRequest(req map[string]any) bool {
+	// 模型名含 image 时直接走图片路径（gpt-image-2, gpt-image-2.5, codex-gpt-image-2 等）
+	if model, ok := req["model"].(string); ok && strings.Contains(strings.ToLower(model), "image") {
+		return true
+	}
 	msgs, _ := req["messages"].([]any)
 	for _, m := range msgs {
 		if mp, ok := m.(map[string]any); ok {
@@ -58,7 +62,7 @@ func HandleChatCompletionsWith(c *gin.Context, orch *protocol.Orchestrator) {
 	stream, _ := req["stream"].(bool)
 	model, _ := req["model"].(string)
 	if model == "" {
-		model = "gpt-4o"
+		model = "auto"
 	}
 	if !isImageChatRequest(req) {
 		handleTextChat(c, orch, req, model, stream)

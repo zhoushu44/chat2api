@@ -11,19 +11,19 @@ import (
 // FallbackChatModels 对等 Python FALLBACK_CHAT_MODELS。
 var FallbackChatModels = []string{
 	"auto",
-	"gpt-5",
-	"gpt-5-1",
-	"gpt-5-2",
-	"gpt-5-3",
+	"gpt-6",
+	"gpt-6-mini",
+	"gpt-6-t-mini",
+	"gpt-5-6",
 	"gpt-5-3-mini",
-	"gpt-5-5",
-	"gpt-5-mini",
+	"gpt-5-6-mini",
+	"gpt-5-6-t-mini",
+	"research",
 }
 
 // FallbackImageModels 对等 Python FALLBACK_IMAGE_MODELS。
 var FallbackImageModels = []string{
 	"gpt-image-2",
-	"gpt-image-2.5",
 }
 
 // CodexImageModel codex 生图模型（对等 helper.CODEX_IMAGE_MODEL）。

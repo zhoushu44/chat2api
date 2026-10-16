@@ -51,7 +51,7 @@ var policies = map[string]FailurePolicy{
 "invalid_image_input":          {Scope: "request", Retryable: false, StatusCode: 400, ErrorType: "invalid_request_error"},
 "upstream_text_reply":          {Scope: "request", Retryable: false, StatusCode: 400, ErrorType: "invalid_request_error"},
 "no_image_generated":           {Scope: "request", Retryable: false, StatusCode: 502, ErrorType: "server_error"},
-"unsupported_model":            {Scope: "request", Retryable: false, StatusCode: 400, ErrorType: "invalid_request_error"},
+"unsupported_model":            {Scope: "account", Retryable: true, StatusCode: 400, ErrorType: "invalid_request_error"},
 "image_download_failed":        {Scope: "delivery", Retryable: false, StatusCode: 502, ErrorType: "server_error"},
 "task_interrupted":             {Scope: "request", Retryable: false, StatusCode: 503, ErrorType: "server_error"},
 "no_available_account":         {Scope: "transient", Retryable: false, StatusCode: 503, ErrorType: "server_error"},

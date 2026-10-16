@@ -12,7 +12,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -59,18 +58,9 @@ func main() {
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), *timeout)
 			defer cancel()
-			verr := be.VerifyToken(ctx)
-			if verr == nil {
+			if be.VerifyToken(ctx) == nil {
 				mu.Lock()
 				okN++
-				mu.Unlock()
-				return
-			}
-			// 网络类错误（非 401/403）：无法确认死活，不计 dead（防误杀）
-			var ue *backend.UpstreamHTTPError
-			if !(errors.As(verr, &ue) && (ue.StatusCode == 401 || ue.StatusCode == 403)) {
-				mu.Lock()
-				errN++
 				mu.Unlock()
 				return
 			}

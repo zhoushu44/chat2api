@@ -1,18 +1,15 @@
 package antibot
 
 import (
-	"crypto/sha3"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/sync/singleflight"
 )
 
 const DefaultPowScript = "https://chatgpt.com/backend-api/sentinel/sdk.js"
@@ -139,8 +136,6 @@ func buildPowConfig(userAgent string, scriptSources []string, dataBuild string) 
 		"",
 		cores[rand.Intn(len(cores))],
 		float64(now.UnixMilli()) - perfNow,
-		0, 0, 0, 0, 0, 0,
-		0,
 	}
 }
 
@@ -149,13 +144,6 @@ func powGenerate(seed, difficulty string, config []any, limit int) (string, bool
 	if difficulty == "" {
 		difficulty = "0"
 	}
-	// difficulty 为 hex 字符串，转目标字节
-	target, err := hexToBytes(difficulty)
-	if err != nil {
-		target = []byte{0}
-	}
-	diffLen := len(difficulty) / 2
-	seedBytes := []byte(seed)
 	// 预序列化三段（复刻 Python 的切片拼接，避免重复 json 编码）
 	static1JSON, _ := json.Marshal(config[:3])
 	static1 := append([]byte(strings.TrimSuffix(string(static1JSON), "]")+","), []byte{}...)
@@ -177,67 +165,28 @@ func powGenerate(seed, difficulty string, config []any, limit int) (string, bool
 	for i := 0; i < limit; i++ {
 		part := fmt.Sprintf("%s%d%s%d%s", string(static1), i, string(static2), i>>1, string(static3))
 		encoded := base64.StdEncoding.EncodeToString([]byte(part))
-		h := sha3.New512()
-		h.Write(seedBytes)
-		h.Write([]byte(encoded))
-		digest := h.Sum(nil)
-		if len(digest) >= diffLen {
-			le := true
-			for k := 0; k < diffLen; k++ {
-				if digest[k] > target[k] {
-					le = false
-					break
-				} else if digest[k] < target[k] {
-					break
-				}
-			}
-			if le {
-				return encoded, true
-			}
+		hash := fnv1aHash(seed + encoded)
+		if hash[:len(difficulty)] <= difficulty {
+			return encoded, true
 		}
 	}
 	fallback := "wQ8Lk5FbGpA2NcR9dShT6gYjU7VxZ4D" + base64.StdEncoding.EncodeToString([]byte(`"`+seed+`"`))
 	return fallback, false
 }
 
-func hexToBytes(s string) ([]byte, error) {
-	if len(s)%2 == 1 {
-		s = "0" + s
+// fnv1aHash 实现 FNV-1a 32-bit + 额外混合（对等官方 Sentinel SDK 的 hash 函数）。
+func fnv1aHash(text string) string {
+	h := uint32(2166136261)
+	for _, ch := range text {
+		h ^= uint32(ch)
+		h *= 16777619
 	}
-	out := make([]byte, len(s)/2)
-	for i := 0; i < len(out); i++ {
-		var v byte
-		_, err := fmt.Sscanf(s[i*2:i*2+2], "%02x", &v)
-		if err != nil {
-			// 手动解析
-			hi := hexVal(s[i*2])
-			lo := hexVal(s[i*2+1])
-			v = hi<<4 | lo
-		}
-		out[i] = v
-	}
-	return out, nil
-}
-func hexVal(c byte) byte {
-	switch {
-	case c >= '0' && c <= '9':
-		return c - '0'
-	case c >= 'a' && c <= 'f':
-		return c - 'a' + 10
-	case c >= 'A' && c <= 'F':
-		return c - 'A' + 10
-	}
-	return 0
-}
-
-var (
-	proofCache   sync.Map // key -> cachedToken
-	proofSF      singleflight.Group
-)
-
-type cachedToken struct {
-	Token  string
-	Expire time.Time
+	h ^= h >> 16
+	h *= 2246822507
+	h ^= h >> 13
+	h *= 3266489909
+	h ^= h >> 16
+	return fmt.Sprintf("%08x", h)
 }
 
 // BuildLegacyRequirementsToken 生成 requirements 阶段的 p token（对等 build_legacy_requirements_token）。
@@ -247,35 +196,18 @@ func BuildLegacyRequirementsToken(userAgent string, scriptSources []string, data
 	return "gAAAAAC" + base64.StdEncoding.EncodeToString(b)
 }
 
-// BuildProofToken 生成 finalize 阶段的 proof token（单flight + 30s TTL 缓存，避免 50万次 sha3 重算）。
+// BuildProofToken 生成 finalize 阶段的 proof token。
+// fix9: 移除全局 30s TTL 缓存——原实现在并发下多账号共享同一 proof token，
+// 是上游风控的强关联信号（sentinel token 一次性 + proof 字串一字不差跨账号复用）。
+// FNV-1a 现算成本实测 <5ms（50万次上限内），换来每请求唯一 token。
 func BuildProofToken(seed, difficulty, userAgent string, scriptSources []string, dataBuild string) (string, error) {
 	if seed == "" || difficulty == "" {
 		return BuildLegacyRequirementsToken(userAgent, scriptSources, dataBuild), nil
 	}
-	key := seed + "|" + difficulty + "|" + userAgent
-	if v, ok := proofCache.Load(key); ok {
-		if ct, ok := v.(cachedToken); ok && time.Now().Before(ct.Expire) {
-			return ct.Token, nil
-		}
+	config := buildPowConfig(userAgent, scriptSources, dataBuild)
+	answer, solved := powGenerate(seed, difficulty, config, 500000)
+	if !solved {
+		return "", fmt.Errorf("failed to solve proof token: difficulty=%s", difficulty)
 	}
-	val, err, _ := proofSF.Do(key, func() (any, error) {
-		// 双检
-		if v, ok := proofCache.Load(key); ok {
-			if ct, ok := v.(cachedToken); ok && time.Now().Before(ct.Expire) {
-				return ct.Token, nil
-			}
-		}
-		config := buildPowConfig(userAgent, scriptSources, dataBuild)
-		answer, solved := powGenerate(seed, difficulty, config, 500000)
-		if !solved {
-			return "", fmt.Errorf("failed to solve proof token: difficulty=%s", difficulty)
-		}
-		tok := "gAAAAAB" + answer
-		proofCache.Store(key, cachedToken{Token: tok, Expire: time.Now().Add(30 * time.Second)})
-		return tok, nil
-	})
-	if err != nil {
-		return "", err
-	}
-	return val.(string), nil
+	return "gAAAAAB" + answer + "~S", nil
 }

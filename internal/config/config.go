@@ -13,12 +13,9 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"chatgpt2api/internal/settings"
 )
 
 var (
@@ -65,18 +62,16 @@ type SchedulerConfig struct {
 	Hour        int    `json:"daily_401_hour"`        // DAILY_401_CHECK_HOUR
 	Concurrency int    `json:"daily_401_concurrency"` // DAILY_401_CHECK_CONCURRENCY
 	Timezone    string `json:"daily_401_timezone"`    // DAILY_401_CHECK_TIMEZONE
-	// RecoveryEnabled 协议登录恢复开关（AT 失效时走「邮箱+密码+TOTP」恢复，不等邮箱 OTP）
-	RecoveryEnabled bool `json:"daily_401_recovery_enabled"`
 }
 
 // ProxyRuntimeConfig 出站代理运行时（对等 proxy_runtime；Go 版 backend tls-client 透传 proxy_url）。
 type ProxyRuntimeConfig struct {
-	Enabled            bool   `json:"enabled"`
-	EgressMode         string `json:"egress_mode"` // direct | proxy
-	ProxyURL           string `json:"proxy_url"`
-	ResourceProxyURL   string `json:"resource_proxy_url"`
-	SkipSSLVerify      bool   `json:"skip_ssl_verify"`
-	ResetSessionStatus []int  `json:"reset_session_status_codes"`
+	Enabled            bool     `json:"enabled"`
+	EgressMode         string   `json:"egress_mode"` // direct | proxy
+	ProxyURL           string   `json:"proxy_url"`
+	ResourceProxyURL   string   `json:"resource_proxy_url"`
+	SkipSSLVerify      bool     `json:"skip_ssl_verify"`
+	ResetSessionStatus []int    `json:"reset_session_status_codes"`
 }
 
 // ClearanceConfig CF 验证配置（存储透传，真实 clearance 刷新未实现，见 TASKS.md）。
@@ -95,8 +90,7 @@ type ClearanceConfig struct {
 
 // ImageStorageConfig 图片存储（对等 image_storage；mode=local|webdav|both，Go 版 WebDAV 真实可用）。
 type ImageStorageConfig struct {
-	Enabled       bool   `json:"enabled"`         // WebDAV 存储开关
-	ArchiveEnabled *bool `json:"archive_enabled"` // 本地存档开关（nil=默认开）；图片管理页数据源
+	Enabled       bool   `json:"enabled"`
 	Mode          string `json:"mode"`
 	WebDAVURL     string `json:"webdav_url"`
 	WebDAVUser    string `json:"webdav_username"`
@@ -105,20 +99,12 @@ type ImageStorageConfig struct {
 	PublicBaseURL string `json:"public_base_url"`
 }
 
-// ArchiveOn 本地存档是否开启（未显式配置时默认开）。
-func (c ImageStorageConfig) ArchiveOn() bool {
-	if c.ArchiveEnabled != nil {
-		return *c.ArchiveEnabled
-	}
-	return true
-}
-
 // ChatCompletionCacheConfig 对话缓存 normalize 开关（对等 chat_completion_cache 部分键）。
 type ChatCompletionCacheConfig struct {
-	Enabled                bool `json:"enabled"`
-	NormalizeMessages      bool `json:"normalize_messages"`
+	Enabled               bool `json:"enabled"`
+	NormalizeMessages     bool `json:"normalize_messages"`
 	DropAdjacentDuplicates bool `json:"drop_adjacent_duplicates"`
-	DropAssistantHistory   bool `json:"drop_assistant_history"`
+	DropAssistantHistory  bool `json:"drop_assistant_history"`
 }
 
 // AIReviewConfig AI 审核链路（对等 ai_review；调用未实现，配置透传）。
@@ -140,10 +126,10 @@ type BackupConfig struct {
 
 // ImageGenerationConfig 生图总开关与模型白名单（对等 image_generation 部分键）。
 type ImageGenerationConfig struct {
-	Enabled         bool     `json:"enabled"`
-	SupportedModels []string `json:"supported_models"`
-	OutputFormat    string   `json:"output_format"` // b64_json | url
-	explicit        bool     // JSON 中出现过该段（区分"显式禁用"与"零值未配置"）
+	Enabled          bool     `json:"enabled"`
+	SupportedModels  []string `json:"supported_models"`
+	OutputFormat     string   `json:"output_format"` // b64_json | url
+	explicit         bool     // JSON 中出现过该段（区分"显式禁用"与"零值未配置"）
 }
 
 // UnmarshalJSON 记录段落出现（门控只对显式 enabled=false 生效）。
@@ -158,42 +144,15 @@ func (c *ImageGenerationConfig) ExplicitlyDisabled() bool {
 	return c != nil && c.explicit && !c.Enabled
 }
 
-// MarkExplicit 标记该段被显式配置过（面板保存 enabled=false 时也需要门控生效）。
-func (c *ImageGenerationConfig) MarkExplicit() {
-	if c != nil {
-		c.explicit = true
-	}
-}
-
-// SuperResolutionConfig 图片超分（腾讯云 COS 数据万象 AISuperResolution）。
-// 功能化设计：整段仅被 internal/superres 与生图 handler 消费，
-// 删除功能时移除本段 + applySuperResolution + seed 行即可，无其他引用。
-type SuperResolutionConfig struct {
-	Enabled        bool   `json:"enabled"`
-	SecretID       string `json:"secret_id"`
-	SecretKey      string `json:"secret_key"`
-	Bucket         string `json:"bucket"`
-	Region         string `json:"region"`
-	PublicBaseURL  string `json:"public_base_url"`
-	UploadEndpoint string `json:"upload_endpoint"`
-	// 输出转码（可选）：webp / jpeg；空 = 保持无损 PNG。
-	OutputFormat string `json:"output_format"`
-	// 转码质量 60~95（默认 85）。
-	OutputQuality int `json:"output_quality"`
-	// 精确尺寸开关：默认 false = 超分后追加 imageMogr2/thumbnail/WxH! 严格缩放到请求尺寸；
-	// 置 true 则保持旧行为（成品尺寸为 源图×factor 的近似值）。
-	DisableExactSize bool `json:"disable_exact_size"`
-}
-
 // QuotaLimitsConfig 配额上限（对等 quota_limits；-1 不限；强制执行未实现，配置透传）。
 type QuotaLimitsConfig struct {
-	Enabled            bool `json:"enabled"`
-	FastDailyLimit     int  `json:"fast_daily_limit"`
-	ThinkingDailyLimit int  `json:"thinking_daily_limit"`
-	ProDailyLimit      int  `json:"pro_daily_limit"`
-	ImageDailyLimit    int  `json:"image_daily_limit"`
-	MusicDailyLimit    int  `json:"music_daily_limit"`
-	VideoDailyLimit    int  `json:"video_daily_limit"`
+	Enabled           bool `json:"enabled"`
+	FastDailyLimit    int  `json:"fast_daily_limit"`
+	ThinkingDailyLimit int `json:"thinking_daily_limit"`
+	ProDailyLimit     int  `json:"pro_daily_limit"`
+	ImageDailyLimit   int  `json:"image_daily_limit"`
+	MusicDailyLimit   int  `json:"music_daily_limit"`
+	VideoDailyLimit   int  `json:"video_daily_limit"`
 }
 
 // Config 全局配置。字段名与 Python 版 config.json 键名保持一致，方便直接迁移。
@@ -228,7 +187,6 @@ type Config struct {
 	AIReview            AIReviewConfig            `json:"ai_review"`
 	Backup              BackupConfig              `json:"backup"`
 	ImageGeneration     ImageGenerationConfig     `json:"image_generation"`
-	SuperResolution     SuperResolutionConfig     `json:"super_resolution"`
 	QuotaLimits         QuotaLimitsConfig         `json:"quota_limits"`
 }
 
@@ -238,13 +196,13 @@ func defaults() *Config {
 		StorageType: "json",
 		DataDir:     "./data",
 		Poll: PollConfig{
-			InitialWaitSecs:   0.3,
-			IntervalSecs:      1.0,
-			MaxIntervalSecs:   5.0,
-			TimeoutSecs:       60.0,
+			InitialWaitSecs:  0.3,
+			IntervalSecs:     1.0,
+			MaxIntervalSecs:  5.0,
+			TimeoutSecs:      60.0,
 			StreamTimeoutSecs: 80.0,
-			SettleSecs:        1.0,
-			SettleEnabled:     true,
+			SettleSecs:       1.0,
+			SettleEnabled:    true,
 		},
 		Account: AccountConfig{
 			Concurrency:           1,
@@ -254,11 +212,10 @@ func defaults() *Config {
 			TokenRefreshLeadSecs:  300,
 		},
 		Scheduler: SchedulerConfig{
-			Enabled:         true,
-			Hour:            3,
-			Concurrency:     100,
-			Timezone:        "Asia/Shanghai",
-			RecoveryEnabled: true,
+			Enabled:     true,
+			Hour:        3,
+			Concurrency: 100,
+			Timezone:    "Asia/Shanghai",
 		},
 		RefreshAccountMin:  5,
 		ImageRetentionDays: 15,
@@ -344,46 +301,9 @@ func Load(path string) (*Config, error) {
 	if cfg.DataDir == "" {
 		cfg.DataDir = "./data"
 	}
-	// 出站代理：生图访问 chatgpt.com 需非 CN 出口，否则直连被拒。
-	// 支持 socks5://（tls-client 透传），优先级高于 config.json 中的 proxy。
-	if v := os.Getenv("CHATGPT2API_PROXY"); v != "" {
-		cfg.Proxy = v
-		cfg.ProxyRuntime.Enabled = true
-		cfg.ProxyRuntime.ProxyURL = v
-	}
 	// Scheduler env overrides 对齐 abai .env.example
 	if v := os.Getenv("DAILY_401_CHECK_ENABLED"); v != "" {
 		cfg.Scheduler.Enabled = v != "0" && v != "false" && v != "no" && v != "off"
-	}
-	// 图片超分环境变量（SUPERRES_*；对齐 .env.example 文档，功能化可整体摘除）
-	if v := os.Getenv("SUPERRES_ENABLED"); v != "" {
-		cfg.SuperResolution.Enabled = v != "0" && v != "false" && v != "no" && v != "off"
-	}
-	if v := os.Getenv("SUPERRES_SECRET_ID"); v != "" {
-		cfg.SuperResolution.SecretID = v
-	}
-	if v := os.Getenv("SUPERRES_SECRET_KEY"); v != "" {
-		cfg.SuperResolution.SecretKey = v
-	}
-	if v := os.Getenv("SUPERRES_BUCKET"); v != "" {
-		cfg.SuperResolution.Bucket = v
-	}
-	if v := os.Getenv("SUPERRES_REGION"); v != "" {
-		cfg.SuperResolution.Region = v
-	}
-	if v := os.Getenv("SUPERRES_PUBLIC_BASE_URL"); v != "" {
-		cfg.SuperResolution.PublicBaseURL = v
-	}
-	if v := os.Getenv("SUPERRES_UPLOAD_ENDPOINT"); v != "" {
-		cfg.SuperResolution.UploadEndpoint = v
-	}
-	if v := os.Getenv("SUPERRES_OUTPUT_FORMAT"); v != "" {
-		cfg.SuperResolution.OutputFormat = v
-	}
-	if v := os.Getenv("SUPERRES_OUTPUT_QUALITY"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			cfg.SuperResolution.OutputQuality = n
-		}
 	}
 	if v := os.Getenv("DAILY_401_CHECK_HOUR"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
@@ -397,12 +317,6 @@ func Load(path string) (*Config, error) {
 	}
 	if v := os.Getenv("DAILY_401_CHECK_TIMEZONE"); v != "" {
 		cfg.Scheduler.Timezone = v
-	}
-	// 控制台设置覆盖：<DataDir>/settings.json 存在时优先于 config.json / 环境变量。
-	// 放在最后，保证面板保存的值不会被启动配置再次盖回。
-	// 敏感词过滤由调用方在 Load 之后自行 ApplyRuntimeEffects 下发（避免 config 反向依赖 filter）。
-	if data := settings.NewStore(cfg.DataDir).Snapshot(); len(data) > 0 {
-		applyOverrides(cfg, data)
 	}
 	globalConfig.Store(cfg)
 	// 异步热更新：500ms 轮询 mtime，debounce 100ms
@@ -418,268 +332,6 @@ func Get() *Config {
 		return v.(*Config)
 	}
 	return defaults()
-}
-
-// applyOverrides 把控制台设置（settings.json）合并进配置。
-// 只覆盖白名单内的键，凭证类（auth-key / backup / ai_review）不从面板回写，
-// 避免面板保存把部署时的密钥冲成空值。
-// 注意：DataDir 不在白名单内，因此启动时传入的 DataDir 不会被覆盖，
-// watchConfig 的路径始终有效。
-func applyOverrides(cfg *Config, over map[string]any) {
-	if cfg == nil || len(over) == 0 {
-		return
-	}
-	if v, ok := over["proxy"].(string); ok {
-		cfg.Proxy = strings.TrimSpace(v)
-	}
-	if v, ok := over["base_url"].(string); ok {
-		cfg.BaseURL = strings.TrimSpace(v)
-	}
-	if v, ok := number(over["image_retention_days"]); ok && v >= 1 {
-		cfg.ImageRetentionDays = int(v)
-	}
-	if v, ok := number(over["refresh_account_interval_minute"]); ok && v >= 1 {
-		cfg.RefreshAccountMin = int(v)
-	}
-	if v, ok := stringSlice(over["sensitive_words"]); ok {
-		cfg.SensitiveWords = v
-	}
-	if v, ok := over["global_system_prompt"].(string); ok {
-		cfg.GlobalSystemPrompt = v
-	}
-	if m, ok := over["image_generation"].(map[string]any); ok {
-		applyImageGeneration(cfg, m)
-	}
-	if m, ok := over["image_storage"].(map[string]any); ok {
-		applyImageStorage(cfg, m)
-	}
-	if m, ok := over["super_resolution"].(map[string]any); ok {
-		applySuperResolution(cfg, m)
-	}
-	if m, ok := over["proxy_runtime"].(map[string]any); ok {
-		applyProxyRuntime(cfg, m)
-	}
-	if m, ok := over["clearance"].(map[string]any); ok {
-		applyClearance(cfg, m)
-	}
-}
-
-// EnableOverridesFromDir 读取 <dir>/settings.json 并合并进全局配置。
-// NewStore 对缺失/损坏文件返回空设置，此处等价于"无覆盖"。
-func EnableOverridesFromDir(dir string) {
-	if strings.TrimSpace(dir) == "" {
-		return
-	}
-	data := settings.NewStore(dir).Snapshot()
-	if len(data) == 0 {
-		return
-	}
-	applyOverrides(globalConfig.Load().(*Config), data)
-}
-
-// ApplyRuntime 在服务运行中热更新代理相关字段（面板保存后即时生效）。
-func ApplyRuntime(patch map[string]any) {
-	v := globalConfig.Load()
-	if v == nil {
-		return
-	}
-	cfg := v.(*Config)
-	if proxy, ok := patch["proxy"].(string); ok && strings.TrimSpace(proxy) != "" {
-		cfg.Proxy = strings.TrimSpace(proxy)
-	}
-	if words, ok := stringSlice(patch["sensitive_words"]); ok {
-		cfg.SensitiveWords = words
-	}
-	if days, ok := number(patch["image_retention_days"]); ok && days >= 1 {
-		cfg.ImageRetentionDays = int(days)
-	}
-	if m, ok := patch["proxy_runtime"].(map[string]any); ok {
-		applyProxyRuntime(cfg, m)
-	}
-	if m, ok := patch["clearance"].(map[string]any); ok {
-		applyClearance(cfg, m)
-	}
-	if m, ok := patch["super_resolution"].(map[string]any); ok {
-		applySuperResolution(cfg, m)
-	}
-	if m, ok := patch["image_storage"].(map[string]any); ok {
-		applyImageStorage(cfg, m)
-	}
-}
-
-func applyImageGeneration(cfg *Config, m map[string]any) {
-	if v, ok := m["enabled"].(bool); ok {
-		cfg.ImageGeneration.Enabled = v
-		cfg.ImageGeneration.MarkExplicit()
-	}
-	if v, ok := stringSlice(m["supported_models"]); ok {
-		cfg.ImageGeneration.SupportedModels = v
-	}
-	if v, ok := m["output_format"].(string); ok && v != "" {
-		cfg.ImageGeneration.OutputFormat = v
-	}
-}
-
-// applyImageStorage 图片存储热更：enabled（WebDAV）/archive_enabled（本地存档）/mode 面板保存即生效。
-func applyImageStorage(cfg *Config, m map[string]any) {
-	if v, ok := m["enabled"].(bool); ok {
-		cfg.ImageStorage.Enabled = v
-	}
-	if v, ok := m["archive_enabled"].(bool); ok {
-		cfg.ImageStorage.ArchiveEnabled = &v
-	}
-	if v, ok := m["mode"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.ImageStorage.Mode = strings.TrimSpace(v)
-	}
-}
-
-// applySuperResolution 超分段热更（对等 applyImageGeneration 的形状约定）。
-// secret_key 留空表示沿用已保存值（对等 clearance.cf_cookies 的语义，不清除）。
-func applySuperResolution(cfg *Config, m map[string]any) {
-	if v, ok := m["enabled"].(bool); ok {
-		cfg.SuperResolution.Enabled = v
-	}
-	if v, ok := m["secret_id"].(string); ok {
-		cfg.SuperResolution.SecretID = strings.TrimSpace(v)
-	}
-	// 凭证类：留空保持不变（避免面板整存把已存密钥冲成空）
-	if v, ok := m["secret_key"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.SuperResolution.SecretKey = strings.TrimSpace(v)
-	}
-	if v, ok := m["bucket"].(string); ok {
-		cfg.SuperResolution.Bucket = strings.TrimSpace(v)
-	}
-	if v, ok := m["region"].(string); ok {
-		cfg.SuperResolution.Region = strings.TrimSpace(v)
-	}
-	if v, ok := m["public_base_url"].(string); ok {
-		cfg.SuperResolution.PublicBaseURL = strings.TrimSpace(v)
-	}
-	if v, ok := m["upload_endpoint"].(string); ok {
-		cfg.SuperResolution.UploadEndpoint = strings.TrimSpace(v)
-	}
-	// 压缩勾选框：勾选 = JPEG 转码；不勾 = 无损 PNG（清空 output_format）。
-	if v, ok := m["compress"].(bool); ok {
-		if v {
-			cfg.SuperResolution.OutputFormat = "jpeg"
-		} else {
-			cfg.SuperResolution.OutputFormat = ""
-		}
-	} else if v, ok := m["output_format"].(string); ok {
-		// 兼容直接传 output_format 的调用方（API/脚本）
-		cfg.SuperResolution.OutputFormat = strings.TrimSpace(v)
-	}
-	if v, ok := m["output_quality"].(float64); ok {
-		cfg.SuperResolution.OutputQuality = int(v)
-	}
-	// 精确尺寸开关（面板/脚本可热更；缺省保持当前值）
-	if v, ok := m["disable_exact_size"].(bool); ok {
-		cfg.SuperResolution.DisableExactSize = v
-	}
-}
-
-func applyProxyRuntime(cfg *Config, m map[string]any) {
-	if v, ok := m["enabled"].(bool); ok {
-		cfg.ProxyRuntime.Enabled = v
-	}
-	if v, ok := m["egress_mode"].(string); ok && v != "" {
-		cfg.ProxyRuntime.EgressMode = v
-	}
-	if v, ok := m["proxy_url"].(string); ok {
-		cfg.ProxyRuntime.ProxyURL = v
-	}
-	if v, ok := m["resource_proxy_url"].(string); ok {
-		cfg.ProxyRuntime.ResourceProxyURL = v
-	}
-	if v, ok := m["skip_ssl_verify"].(bool); ok {
-		cfg.ProxyRuntime.SkipSSLVerify = v
-	}
-	if v, ok := intSlice(m["reset_session_status_codes"]); ok && len(v) > 0 {
-		cfg.ProxyRuntime.ResetSessionStatus = v
-	}
-}
-
-func applyClearance(cfg *Config, m map[string]any) {
-	if v, ok := m["enabled"].(bool); ok {
-		cfg.Clearance.Enabled = v
-	}
-	if v, ok := m["mode"].(string); ok && v != "" {
-		cfg.Clearance.Mode = v
-	}
-	// cf_cookies / cf_clearance 留空表示"沿用已保存值"，不清除
-	if v, ok := m["cf_cookies"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.Clearance.CfCookies = v
-	}
-	if v, ok := m["cf_clearance"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.Clearance.CfClearance = v
-	}
-	if v, ok := m["user_agent"].(string); ok && strings.TrimSpace(v) != "" {
-		cfg.Clearance.UserAgent = v
-	}
-	if v, ok := m["browser"].(string); ok && v != "" {
-		cfg.Clearance.Browser = v
-	}
-	if v, ok := m["flaresolverr_url"].(string); ok {
-		cfg.Clearance.FlaresolverrURL = v
-	}
-	if v, ok := number(m["timeout_sec"]); ok && v >= 1 {
-		cfg.Clearance.TimeoutSec = int(v)
-	}
-	if v, ok := number(m["refresh_interval"]); ok && v >= 60 {
-		cfg.Clearance.RefreshInterval = int(v)
-	}
-	if v, ok := m["warm_up_on_start"].(bool); ok {
-		cfg.Clearance.WarmUpOnStart = v
-	}
-}
-
-func number(value any) (float64, bool) {
-	switch v := value.(type) {
-	case float64:
-		return v, true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	default:
-		return 0, false
-	}
-}
-
-// stringSlice / intSlice 同时接受 JSON 解码产物（[]any）与 Go 原生切片，
-// 因为同一份数据可能来自 settings.json 反序列化，也可能来自服务端内部构造的 patch。
-func stringSlice(value any) ([]string, bool) {
-	switch v := value.(type) {
-	case []string:
-		return append([]string(nil), v...), true
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, item := range v {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out, true
-	default:
-		return nil, false
-	}
-}
-
-func intSlice(value any) ([]int, bool) {
-	switch v := value.(type) {
-	case []int:
-		return append([]int(nil), v...), true
-	case []any:
-		out := make([]int, 0, len(v))
-		for _, item := range v {
-			if n, ok := number(item); ok {
-				out = append(out, int(n))
-			}
-		}
-		return out, true
-	default:
-		return nil, false
-	}
 }
 
 var watchOnce sync.Once

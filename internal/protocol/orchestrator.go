@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -29,8 +30,6 @@ type Orchestrator struct {
 	Accounts *account.Service
 	Logger   *logsvc.Service
 	Metrics  *metrics.Metrics // 仪表盘指标（P1.7，可为 nil）
-	// Archiver 生图存档（可选）：成功后落盘 <DataDir>/images/，图片管理页数据源。
-	Archiver *ImageArchiver
 	Config   struct {
 		MaxAttempts int
 		Concurrency int
@@ -283,19 +282,15 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 				At:        time.Now(),
 			})
 		}
-		// 记录 image_attempts（对等 log_service image_attempts）；耗时按本次尝试全程计。
-		logCall := func(callErr error) {
-			if o.Logger == nil {
-				return
-			}
+		// 记录 image_attempts（对等 log_service image_attempts）
+		if o.Logger != nil {
 			o.Logger.Add(&logsvc.LoggedCall{
-				ID:         utils.NewUUID(),
-				Prompt:     req.Prompt,
-				Model:      req.Model,
-				Status:     statusOf(callErr),
-				CreatedAt:  time.Now(),
-				DurationMs: time.Since(pickStart).Milliseconds(),
-				Attempts:   []logsvc.Attempt{{AccountID: acc.Email, Code: codeOf(callErr)}},
+				ID:        utils.NewUUID(),
+				Prompt:    req.Prompt,
+				Model:     req.Model,
+				Status:    statusOf(err),
+				CreatedAt: time.Now(),
+				Attempts:  []logsvc.Attempt{{AccountID: acc.Email, Code: codeOf(err)}},
 			})
 		}
 		if err == nil {
@@ -305,7 +300,6 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			resolveMs := time.Since(resStart).Milliseconds()
 			if rerr != nil {
 				o.Pool.Release(acc)
-				logCall(fmt.Errorf("resolve image urls: %w", rerr))
 				return nil, fmt.Errorf("resolve image urls: %w", rerr)
 			}
 			// b64 模式：并发下载后流式编码
@@ -317,16 +311,13 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 				downloadMs = time.Since(dlStart).Milliseconds()
 				if derr == nil {
 					encStart := time.Now()
-					for i, d := range datas {
+					for _, d := range datas {
 						b64Data = append(b64Data, []byte(base64.StdEncoding.EncodeToString(d)))
-						// 生图存档：原始字节落盘（旁路失败不影响主链路）
-						o.Archiver.Archive(d, i)
 					}
 					encodeMs = time.Since(encStart).Milliseconds()
 				}
 			}
 			o.Pool.Release(acc)
-			logCall(nil)
 			stage := res.Stage
 			stage.AccountPickMs = pickMs
 			stage.ResolveMs = resolveMs
@@ -336,7 +327,6 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			return &GenerateResult{URLs: urls, B64: b64Data, Timing: stage}, nil
 		}
 		lastErr = err
-		logCall(err)
 		f := failure.Classify(err, 0, err.Error())
 		o.Pool.Release(acc)
 		if isAuthFailure(f) {
@@ -349,7 +339,7 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			break
 		}
 		// 冷却
-		o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
+		o.Pool.Cooldown(acc, time.Now().Add(cooldownFor(f)))
 		excluded[acc.Token] = true
 	}
 	if lastErr != nil {
@@ -400,7 +390,7 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 			if !f.SwitchAccount() {
 				break
 			}
-			o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
+			o.Pool.Cooldown(acc, time.Now().Add(cooldownFor(f)))
 			excluded[acc.Token] = true
 			continue
 		}
@@ -413,12 +403,11 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 		o.recordTextMetrics(req, genStart, streamErr)
 		if o.Logger != nil {
 			o.Logger.Add(&logsvc.LoggedCall{
-				ID:         utils.NewUUID(),
-				Model:      req.Model,
-				Status:     statusOf(streamErr),
-				CreatedAt:  time.Now(),
-				DurationMs: time.Since(genStart).Milliseconds(),
-				Attempts:   []logsvc.Attempt{{AccountID: acc.Email, Code: codeOf(streamErr)}},
+				ID:        utils.NewUUID(),
+				Model:     req.Model,
+				Status:    statusOf(streamErr),
+				CreatedAt: time.Now(),
+				Attempts:  []logsvc.Attempt{{AccountID: acc.Email, Code: codeOf(streamErr)}},
 			})
 		}
 		if streamErr == nil || parser.Text != "" {
@@ -436,7 +425,7 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 		if !f.SwitchAccount() {
 			break
 		}
-		o.Pool.Cooldown(acc, time.Now().Add(30*time.Second))
+		o.Pool.Cooldown(acc, time.Now().Add(cooldownFor(f)))
 		excluded[acc.Token] = true
 	}
 	if lastErr != nil {
@@ -503,4 +492,16 @@ func codeOf(err error) string {
 		return "ok"
 	}
 	return "upstream_error"
+}
+
+// cooldownFor 失败冷却时长分级：账号级模型门控（unsupported_model，上游账号
+// 白名单非豁免的表现，短期不可恢复）冷却 12h+jitter；其余失败维持 30s+jitter。
+// jitter 避免同批账号同步解禁的雷群效应。
+func cooldownFor(f failure.ImageFailure) time.Duration {
+	base := 30 * time.Second
+	if f.Code == "unsupported_model" {
+		base = 12 * time.Hour
+	}
+	jitter := time.Duration(rand.Int63n(int64(base) / 10))
+	return base + jitter
 }

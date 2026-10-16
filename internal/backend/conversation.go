@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"chatgpt2api/internal/fingerprint"
 )
 
 // 客户端版本常量（对等 Python openai_backend_api.py:59-61）。
@@ -35,9 +37,18 @@ type Fingerprint struct {
 	SecChUaPlatform string `json:"sec-ch-ua-platform"`
 }
 
-// DefaultFingerprint 生成默认指纹（设备/会话 ID 每实例随机，对等 setdefault new_uuid）。
+// DefaultFingerprint 生成默认指纹。
+// fix9: UA/SecChUa 从 fingerprint.Pool 6 套桌面 profile 中按 accountKey 稳定选取
+// （同一账号永远同一指纹，跨账号指纹差异分散风控关联），替代全员单一 Edge143 常量。
+// accountKey 为空时退化为原单一默认（兼容旧调用/测试）。
 func DefaultFingerprint() Fingerprint {
-	return Fingerprint{
+	return FingerprintForAccount("")
+}
+
+// FingerprintForAccount 按账号稳定派生指纹：profile 选择 = hash(accountKey) % 6，
+// 同一账号得到同一 UA（上游设备画像稳定），不同账号分散到不同 UA/时区/分辨率组合。
+func FingerprintForAccount(accountKey string) Fingerprint {
+	base := Fingerprint{
 		UserAgent:       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
 		Impersonate:     "chrome110",
 		OaiDeviceID:     uuid.NewString(),
@@ -46,6 +57,37 @@ func DefaultFingerprint() Fingerprint {
 		SecChUaMobile:   "?0",
 		SecChUaPlatform: `"Windows"`,
 	}
+	if accountKey == "" {
+		return base
+	}
+	all := fingerprint.DefaultPool.All()
+	p := all[int(stableHash(accountKey))%len(all)]
+	base.UserAgent = p.UserAgent
+	base.Impersonate = p.Impersonate
+	base.SecChUa = secChUaFor(p)
+	if strings.Contains(p.UserAgent, "Macintosh") {
+		base.SecChUaPlatform = `"macOS"`
+	} else if strings.Contains(p.UserAgent, "X11") {
+		base.SecChUaPlatform = `"Linux"`
+	} else {
+		base.SecChUaPlatform = `"Windows"`
+	}
+	return base
+}
+
+// secChUaFor Chrome 146 的 sec-ch-ua 头值。
+func secChUaFor(p fingerprint.Profile) string {
+	return `"Chromium";v="146", "Google Chrome";v="146", "Not-A.Brand";v="99"`
+}
+
+// stableHash FNV-1a 32-bit（与 PoW 同族算法，纯本地无依赖）。
+func stableHash(s string) uint32 {
+	h := uint32(2166136261)
+	for _, c := range s {
+		h ^= uint32(c)
+		h *= 16777619
+	}
+	return h
 }
 
 // Merge 账号级指纹覆盖（空值忽略，对等 fp.setdefault 语义）。
@@ -190,15 +232,14 @@ func IsCodexImageModel(model string) bool {
 }
 
 // ImageModelSlug 标准图片模型名 → 底层 slug（对等 _image_model_slug:787-796）。
-// gpt-image-2 / gpt-image-2.5 → gpt-5-3（同一 web 生图链路，2.5 由上游按最新版本出图）；
-// codex-gpt-image-2 → 原样；其他 → auto。
+// gpt-image-2 → auto（gpt4free 验证）；codex-gpt-image-2 → 原样；其他 → auto。
 func ImageModelSlug(model string) string {
 	_, base := SplitImageModel(model)
 	switch base {
 	case "":
 		return "auto"
 	case "gpt-image-2", "gpt-image-2.5":
-		return "gpt-5-3"
+		return "auto"
 	case CodexImageModel:
 		return base
 	default:

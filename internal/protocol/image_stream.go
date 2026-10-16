@@ -162,7 +162,6 @@ func (o *Orchestrator) GenerateStream(ctx context.Context, req GenerateRequest, 
 
 // generateOne 单账号一次生图（含 progress 推送与结果组装）。
 func (o *Orchestrator) generateOne(ctx context.Context, be *backend.Backend, acc *account.Account, req GenerateRequest, emit func(ImageOutput), attempt, attempts int) (*GenerateResult, error) {
-	startAt := time.Now()
 	emit(ImageOutput{Kind: ImageOutputProgress, Index: attempt, Total: attempts, Text: "bootstrapping", AccountEmail: acc.Email})
 	policy := defaultPollPolicy()
 	res, err := be.GenerateImage(ctx, req.Prompt, req.Model, req.Images, policy)
@@ -178,10 +177,8 @@ func (o *Orchestrator) generateOne(ctx context.Context, be *backend.Backend, acc
 	if len(urls) > 0 {
 		emit(ImageOutput{Kind: ImageOutputProgress, Index: attempt, Total: attempts, Text: "downloading", AccountEmail: acc.Email, Conversation: res.ConversationID})
 		if datas, derr := be.DownloadImages(ctx, urls); derr == nil {
-			for i, d := range datas {
+			for _, d := range datas {
 				b64Data = append(b64Data, encodeB64Bytes(d))
-				// 生图存档：原始字节落盘（旁路失败不影响主链路）
-				o.Archiver.Archive(d, i)
 			}
 		}
 	}
@@ -199,13 +196,12 @@ func (o *Orchestrator) generateOne(ctx context.Context, be *backend.Backend, acc
 	o.recordGenerateMetrics(req, res, nil)
 	if o.Logger != nil {
 		o.Logger.Add(&logsvc.LoggedCall{
-			ID:         utils.NewUUID(),
-			Prompt:     req.Prompt,
-			Model:      req.Model,
-			Status:     "success",
-			CreatedAt:  time.Now(),
-			DurationMs: time.Since(startAt).Milliseconds(),
-			Attempts:   []logsvc.Attempt{{AccountID: acc.Email, Code: "ok"}},
+			ID:        utils.NewUUID(),
+			Prompt:    req.Prompt,
+			Model:     req.Model,
+			Status:    "success",
+			CreatedAt: time.Now(),
+			Attempts:  []logsvc.Attempt{{AccountID: acc.Email, Code: "ok"}},
 		})
 	}
 	return &GenerateResult{URLs: urls, B64: b64Data, Timing: res.Stage}, nil

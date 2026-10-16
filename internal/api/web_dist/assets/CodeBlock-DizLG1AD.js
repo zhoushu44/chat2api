@@ -1,0 +1,1 @@
+import{d as e,o as t,c,a as s,t as a}from"./index-D1CpqPtV.js";import{_ as n}from"./_plugin-vue_export-helper-DlAUqK2U.js";const r={class:"code-block scrollbar-slim"},l=e({__name:"CodeBlock",props:{content:{}},setup(o){return(_,p)=>(t(),c("pre",r,[s("code",null,a(o.content),1)]))}}),i=n(l,[["__scopeId","data-v-7b183f75"]]);export{i as C};

@@ -5,7 +5,6 @@ import (
 	"context"
 	"net/http"
 	"strings"
-	"time"
 
 	"chatgpt2api/internal/account"
 	"chatgpt2api/internal/api/admin"
@@ -16,14 +15,10 @@ import (
 	"chatgpt2api/internal/logsvc"
 	"chatgpt2api/internal/mailbox"
 	"chatgpt2api/internal/model"
-	"chatgpt2api/internal/monitor"
 	"chatgpt2api/internal/monitor/metrics"
 	"chatgpt2api/internal/prompt"
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/register"
-	"chatgpt2api/internal/refresh"
-	"chatgpt2api/internal/scheduler"
-	"chatgpt2api/internal/settings"
 	"chatgpt2api/internal/task"
 	"chatgpt2api/internal/utils"
 
@@ -51,24 +46,6 @@ type Server struct {
 	Auth *auth.Service
 	// P2.6c 账号 watcher
 	Watcher *account.Watcher
-	// 每日 401 验活 + 协议恢复调度器（main 组装后注入；注入前路由不挂开关）
-	Sched *scheduler.Scheduler
-	// 控制台系统设置存储（<DataDir>/settings.json）
-	Settings *settings.Store
-	// Logs 页面运行日志（进程内环形缓冲，无落盘）
-	Runtime *logsvc.RuntimeService
-	// Monitor 页面实时事件（进程内发布/订阅）
-	Mon *monitor.Service
-	// 账号额度刷新服务（「刷新账号信息和额度」按钮 + 周期同步）
-	Refresher *refresh.Service
-}
-
-// dataDir 统一解析数据目录（Cfg 可能为 nil，此时回落到 ./data）。
-func (s *Server) dataDir() string {
-	if s != nil && s.Cfg != nil && s.Cfg.DataDir != "" {
-		return s.Cfg.DataDir
-	}
-	return "./data"
 }
 
 // NewServer 按 config 组装完整服务树（P0.1）。
@@ -80,22 +57,15 @@ func NewServer(cfg *config.Config) *Server {
 	}
 	accountsSvc := account.New(dataDir)
 	pool := account.NewPool(nil, 0)
-	// 已持久化账号载入号池（失效号不入池：与 watcher「失效号不加回」语义一致，
-	// 避免每次重启对已知失效号重复跑 401 验活/协议恢复）
+	// fix10：长冷却（12h 级）落盘，重启后调度仍收敛
+	pool.SetOnCooldown(func(a *account.Account) { _ = accountsSvc.Add(a) })
+	// 已持久化账号载入号池
 	for _, a := range accountsSvc.List() {
-		if a.Status == account.StatusDisabled {
-			continue
-		}
 		pool.Add(a)
 	}
 	orch := protocol.NewOrchestrator(pool)
 	orch.Accounts = accountsSvc // auth 失效除名落盘（watcher 同步移除）
 	orch.Logger = logsvc.NewWithDir(dataDir, 1000)
-	orch.Archiver = &protocol.ImageArchiver{
-		DataDir: dataDir,
-		// 本地存档开关动态求值（image_storage.archive_enabled，默认开）：面板保存即生效
-		EnabledFunc: func() bool { return config.Get().ImageStorage.ArchiveOn() },
-	}
 	metSvc := metrics.NewWithDir(dataDir)
 	orch.Metrics = metSvc
 	if cfg != nil {
@@ -118,8 +88,6 @@ func NewServer(cfg *config.Config) *Server {
 		Accounts: accountsSvc,
 		Pool:     pool,
 		LogSvc:   orch.Logger,
-		Runtime:  logsvc.NewRuntime(),
-		Mon:      monitor.New(5 * time.Minute),
 		Tasks:    task.New(dataDir),
 		Prompts:  prompt.New(),
 		Orch:     orch,
@@ -196,49 +164,17 @@ func (s *Server) NewRouter() *gin.Engine {
 		RegisterAuthUsers(adminGroup, s.Auth)
 	}
 	if s.Accounts != nil {
-		// 账号刷新服务（nil 安全：handler 未注入时 refresh 路由 503）
-		if s.Refresher == nil {
-			proxy := ""
-			if s.Cfg != nil {
-				proxy = s.Cfg.EffectiveProxy()
-			}
-			s.Refresher = refresh.NewService(s.Accounts, s.Pool, proxy)
-		}
-		(&admin.AccountsHandler{Accounts: s.Accounts, Pool: s.Pool, Refresh: s.Refresher}).Register(adminGroup)
-	}
-	// 调度器开关（账号页「每日401验活+协议恢复」）
-	if s.Sched != nil {
-		dir := ""
-		if s.Cfg != nil {
-			dir = s.Cfg.DataDir
-		}
-		defEnabled := true
-		if s.Cfg != nil {
-			defEnabled = s.Cfg.Scheduler.Enabled
-		}
-		(&admin.SchedulerHandler{Sched: s.Sched, DataDir: dir, DefEnabled: defEnabled}).Register(adminGroup)
+		(&admin.AccountsHandler{Accounts: s.Accounts, Pool: s.Pool}).Register(adminGroup)
 	}
 	if s.Cfg != nil {
 		(&admin.SystemHandler{Cfg: s.Cfg, Catalog: s.Catalog}).Register(adminGroup)
 	}
-	// 控制台「系统设置」读写（settings.json 落盘 + 关键项热应用）
-	if s.Settings == nil {
-		s.Settings = settings.NewStore(s.dataDir())
-	}
-	(&SettingsHandler{Store: s.Settings, Sched: s.Sched}).Register(adminGroup)
 	if s.Tasks != nil {
-		s.RegisterImageTasks(adminGroup)
+		RegisterImageTasks(adminGroup, s.Tasks)
 	}
 	if s.Prompts != nil {
 		RegisterPrompts(adminGroup, s.Prompts)
 	}
-	// Logs / Gallery / Monitor 三个控制台页面（此前路由缺失 → 页面加载失败）
-	(&admin.LogsHandler{LogSvc: s.LogSvc, Runtime: s.Runtime, DataDir: s.dataDir()}).Register(adminGroup)
-	(&admin.GalleryHandler{DataDir: s.dataDir()}).Register(adminGroup)
-	monHandler := &admin.MonitorHandler{Mon: s.Mon, Metrics: s.Metrics}
-	monHandler.Register(adminGroup)
-	// 前端 uptime 直接请求 /public/uptime（无 /api 前缀、无鉴权，对等外部探活）
-	monHandler.RegisterPublic(r)
 	// P1.7 /api/dashboard（对等 Python system.py 该端点）
 	adminGroup.GET("/dashboard", s.handleDashboard)
 	// P0.4 静态 SPA（web_dist embed，此前从未生效）
@@ -398,9 +334,7 @@ func (s *Server) handleDashboard(c *gin.Context) {
 				acc["unknown_quota_count"] = acc["unknown_quota_count"].(int) + 1
 			} else if a.Quota < 0 {
 				acc["unlimited_quota_count"] = acc["unlimited_quota_count"].(int) + 1
-			} else if a.Available() {
-				// 只累计可用账号（非失效/限流/待授权）的额度：失效账号的图片额度已不可用，
-				// 计入会让「剩余额度」虚高。口径与 /api/image-tasks/quota 的 imageQuotaSummary 对齐。
+			} else {
 				acc["total_quota"] = acc["total_quota"].(int) + a.Quota
 			}
 			switch a.Status {

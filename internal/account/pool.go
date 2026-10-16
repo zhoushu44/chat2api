@@ -16,29 +16,27 @@ const (
 )
 
 type Account struct {
-	ID               string `json:"id"`
-	Token            string `json:"token"`
-	Email            string `json:"email"`
-	Type             string `json:"type"`
-	SourceType       string `json:"source_type"`
-	Status           string `json:"status"`
-	Quota            int    `json:"quota"`
-	QuotaUnknown     bool   `json:"quota_unknown"`
-	PendingAuthScope bool   `json:"pending_auth_scope"`
-	RefreshToken     string `json:"refresh_token"`
-	// 恢复凭据：AT 失效时用「邮箱 + Password + TOTPSecret」走协议登录恢复（不等邮箱 OTP）
-	Password        string            `json:"password,omitempty"`
-	SessionToken    string            `json:"session_token,omitempty"`
-	TOTPSecret      string            `json:"totp_secret,omitempty"`
-	TokenExpireAt   int64             `json:"token_expire_at"`
-	PlanType        string            `json:"plan_type"`
-	FP              map[string]string `json:"fp"`
+	ID               string            `json:"id"`
+	Token            string            `json:"token"`
+	Email            string            `json:"email"`
+	Type             string            `json:"type"`
+	SourceType       string            `json:"source_type"`
+	Status           string            `json:"status"`
+	Quota            int               `json:"quota"`
+	QuotaUnknown     bool              `json:"quota_unknown"`
+	PendingAuthScope bool              `json:"pending_auth_scope"`
+	RefreshToken     string            `json:"refresh_token"`
+	TokenExpireAt    int64             `json:"token_expire_at"`
+	PlanType         string            `json:"plan_type"`
+	FP               map[string]string `json:"fp"`
 	LifecycleStatus string            `json:"lifecycle_status"`
 	ValidityStatus  string            `json:"validity_status"`
 	PlanState       string            `json:"plan_state"`
 	DisplayStatus   string            `json:"display_status"`
 	CheckedAt       int64             `json:"checked_at"`
 	Summary         map[string]any    `json:"summary,omitempty"`
+	// CooldownUntil 持久化冷却截止（fix10）：仅长冷却（12h 级）写入，重启后恢复调度。
+	CooldownUntil   int64             `json:"cooldown_until,omitempty"`
 	nextAvailable   int64
 	inflight        int32
 }
@@ -67,20 +65,34 @@ type shard struct {
 }
 
 type Pool struct {
-	mu          sync.RWMutex
-	byToken     map[string]*Account
-	shards      [numShards]shard
-	cursor      atomic.Uint64
+	mu      sync.RWMutex
+	byToken map[string]*Account
+	shards  [numShards]shard
+	cursor  atomic.Uint64
 	refresh     singleflight.Group
 	onRefresh   func(a *Account) (string, error)
 	refreshLead time.Duration
+	// onCooldown 长冷却落盘回调（fix10），router 装配为 accountsSvc.Add。
+	onCooldown func(a *Account)
 }
 
 func NewPool(onRefresh func(a *Account) (string, error), refreshLead time.Duration) *Pool {
 	return &Pool{byToken: make(map[string]*Account), onRefresh: onRefresh, refreshLead: refreshLead}
 }
 
+// SetOnCooldown 挂载长冷却落盘回调（fix10）。
+func (p *Pool) SetOnCooldown(fn func(a *Account)) { p.onCooldown = fn }
+
 func (p *Pool) Add(a *Account) {
+	// fix10：装载时恢复持久化冷却（重启不失忆）
+	if a.CooldownUntil > 0 {
+		now := time.Now().Unix()
+		if a.CooldownUntil > now {
+			atomic.StoreInt64(&a.nextAvailable, a.CooldownUntil)
+		} else {
+			a.CooldownUntil = 0 // 过期清除
+		}
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	// 同 ID 换 token：先清旧 token 条目（对等账号更新语义）
@@ -122,6 +134,8 @@ func mergeAccountLocked(dst, src *Account) {
 	dst.DisplayStatus = src.DisplayStatus
 	dst.CheckedAt = src.CheckedAt
 	dst.Summary = src.Summary
+	// fix10：持久化冷却字段随 upsert 合并
+	dst.CooldownUntil = src.CooldownUntil
 }
 
 // List 快照（读锁）。
@@ -247,8 +261,28 @@ func (p *Pool) Pick(sel Selector) *Account {
 }
 
 func (p *Pool) Release(a *Account) { atomic.AddInt32(&a.inflight, -1) }
+
+// Cooldown 账号冷却。fix10：长冷却（>5min）同步落盘，重启后由 Add 恢复。
 func (p *Pool) Cooldown(a *Account, until time.Time) {
-	atomic.StoreInt64(&a.nextAvailable, until.Unix())
+	ts := until.Unix()
+	// CAS 取 max：短冷却不缩短既有长冷却
+	for {
+		cur := atomic.LoadInt64(&a.nextAvailable)
+		if cur >= ts {
+			return
+		}
+		if atomic.CompareAndSwapInt64(&a.nextAvailable, cur, ts) {
+			break
+		}
+	}
+	// 仅长冷却落盘，避免 30s 级短冷却高频写 accounts.json
+	if ts <= time.Now().Add(5*time.Minute).Unix() {
+		return
+	}
+	a.CooldownUntil = ts
+	if cb := p.onCooldown; cb != nil {
+		cb(a) // svc.Add 独立锁，安全
+	}
 }
 func (p *Pool) EnsureFreshToken(a *Account) error {
 	if a.TokenExpireAt == 0 || time.Now().Add(p.refreshLead).Unix() < a.TokenExpireAt {
