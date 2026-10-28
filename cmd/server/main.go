@@ -23,6 +23,7 @@ import (
 	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/provider"
+	"chatgpt2api/internal/refresh"
 	"chatgpt2api/internal/register"
 	"chatgpt2api/internal/scheduler"
 )
@@ -66,8 +67,40 @@ func main() {
 		}
 		return be.VerifyToken(acctCtx) == nil
 	}
+	// Relogin 钩子 = 额度探测复活（21.0 refresh.go 的机制）。
+	// 不是真的重新登录，而是 POST /backend-api/conversation/init 探测图片额度：
+	// 能通就证明 token 仍有效，账号复活；只有探测也失败才判真死号。
+	sched.Relogin = func(a *account.Account) (string, bool) {
+		acctCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		be, err := backend.NewBackend(a.Token, a.FP, cfg.EffectiveProxy())
+		if err != nil {
+			return "", false
+		}
+		q, err := be.FetchAccountQuota(acctCtx)
+		if err != nil || !q.OK {
+			return "", false // 探测失败 = 真死号
+		}
+		// 探测成功：账号仍存活，回写额度并复活（refresh.go 的 StatusDisabled → Normal 由调度器处理）
+		a.Quota = q.Quota
+		if q.PlanType != "" {
+			a.PlanType = q.PlanType
+		}
+		return a.Token, true // token 未变，但账号已证明存活
+	}
 	sched.Start()
 	defer sched.Stop()
+
+	// 启动额度周期同步（21.0 refresh.go 的 RunPeriodic）。
+	// 定期探测所有账号的图片额度，能通就复活「失效」和「待重登」账号——
+	// 这就是「每日重新登录能救活死号」的持续保障机制。
+	refreshSvc := refresh.NewService(srv.Accounts, srv.Pool, cfg.EffectiveProxy())
+	refreshInterval := 60 // 分钟，默认每小时
+	if cfg.RefreshAccountMin > 0 {
+		refreshInterval = cfg.RefreshAccountMin
+	}
+	refreshSvc.RunPeriodic(context.Background(), refreshInterval)
+	log.Printf("[refresh] 周期额度同步已启动，间隔 %d 分钟（失效/待重登账号探测成功自动复活）", refreshInterval)
 
 	r := srv.NewRouter()
 	log.Printf("chatgpt2api-go listening on %s (storage=%s data=%s accounts=%d) GOMAXPROCS=%d auto_refill=%v", *addr, cfg.StorageType, cfg.DataDir, len(srv.Accounts.List()), runtime.GOMAXPROCS(0), regSvc.GetConfig().AutoRefill)
