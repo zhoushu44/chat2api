@@ -212,8 +212,8 @@ func TestE2E_AuthInvalidRemovesAccount(t *testing.T) {
 	}
 	reloaded := account.New(dir)
 	for _, a := range reloaded.List() {
-		if a.Token == "tok-bad" && a.Status != account.StatusDisabled {
-			t.Fatalf("bad account not persisted as disabled: %+v", a)
+		if a.Token == "tok-bad" && a.Status != account.StatusNeedRelogin {
+			t.Fatalf("bad account not persisted as 待重登: %+v", a)
 		}
 	}
 }
@@ -281,7 +281,7 @@ func TestE2E_FullImagePipeline_RealMock(t *testing.T) {
 	}
 
 	// 测试 URL 解析
-	urls, err := be.ResolveImageURLs(context.Background(), "conv-e2e-123", res.FileIDs, nil)
+	urls, err := be.ResolveImageURLs(context.Background(), "conv-e2e-123", res.FileIDs, nil, res.ReferenceIDs, res.ReferenceIDs)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}

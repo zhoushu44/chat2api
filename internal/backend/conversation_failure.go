@@ -121,10 +121,14 @@ func classifyTurnMessage(msg map[string]any) (string, string) {
 	}
 	if isTrue(msg["blocked"]) || (metadata != nil && isTrue(metadata["blocked"])) {		return "content_policy_violation", trunc(convText(msg), 500)
 	}
-	endTurn, _ := msg["end_turn"].(bool)
 	text := convText(msg)
+	// 生图请求的当前轮已有自然语言回复，但会话里没有任何图片指针：
+	// 这就是「上游只回文本、没有出图」，不再要求 end_turn/status 同时出现。
+	// 调用方保证 fileIDs/sedimentIDs 为空时才调用本函数；
+	// 若仍在流式输出中，end_turn 与终态 status 往往尚未出现，
+	// 而原逻辑恰好因此漏判「Hi! 欢迎回来！」并落入 upstream_error。
 	if role == "assistant" && (ctype == "text" || ctype == "code") &&
-		(endTurn || terminalStatuses[status]) && text != "" && !looksLikeJSON(text) {
+		text != "" && !looksLikeJSON(text) {
 		return "upstream_text_reply", trunc(text, 500)
 	}
 	if role == "tool" && ctype == "system_error" {

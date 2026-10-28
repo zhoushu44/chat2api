@@ -13,7 +13,30 @@ const (
 	StatusNormal   = "正常"
 	StatusLimited  = "限流"
 	StatusDisabled = "失效"
+	// StatusNeedRelogin 需重新登录：access_token 已失效（401/403），
+	// 但在完成一次重新登录并再次验活失败之前，不算真死号。
+	// 不依赖 refresh_token：本池账号本来就没有 refresh_token，
+	// 自动重登应由现有登录链路完成，而不是伪造 OAuth 刷新流程。
+	StatusNeedRelogin = "待重登"
+	// StatusImageBlocked 可登录但不能出图：/me 验活通过，
+	// 实际生图却持续返回文本/额度/工具错误。与 token 失效、真死号分开记录。
+	StatusImageBlocked = "生图失效"
 )
+
+// IsReloginable 表示账号应先尝试自动重登，而不是直接当死号清除。
+// 注意：有没有 refresh_token 不是判据；本池多数账号本来就没有。
+func (a *Account) IsReloginable() bool {
+	return a != nil && a.Status == StatusNeedRelogin
+}
+
+// IsDead 仅表示真死号：已经完成重新登录识别，或账号明确被封/不存在。
+// 只有待重登状态本身不能判定死号。
+func (a *Account) IsDead() bool {
+	if a == nil {
+		return false
+	}
+	return a.Status == StatusDisabled
+}
 
 type Account struct {
 	ID               string            `json:"id"`

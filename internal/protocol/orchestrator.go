@@ -37,13 +37,15 @@ type Orchestrator struct {
 	}
 }
 
-// deactivateAccount 运行中 auth 失效除名：标失效 + 落盘 + 移出池。
+// deactivateAccount 运行中 auth 失效：标「待重登」并移出调度。
+// 不再直接判死号——真正的死号判定交给每日调度的重登识别：
+// 401 只代表 access_token 失效，不代表账号本身已死。
 // 调用方需已 Release 该账号；幂等（已移除则跳过）。
 func (o *Orchestrator) deactivateAccount(acc *account.Account) {
 	if acc == nil {
 		return
 	}
-	acc.Status = account.StatusDisabled
+	acc.Status = account.StatusNeedRelogin
 	if o.Accounts != nil {
 		_ = o.Accounts.Add(acc)
 	}
@@ -296,7 +298,7 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		if err == nil {
 			// 解析 URL（并发）
 			resStart := time.Now()
-			urls, rerr := be.ResolveImageURLs(ctx, res.ConversationID, res.FileIDs, res.SedimentIDs)
+			urls, rerr := be.ResolveImageURLs(ctx, res.ConversationID, res.FileIDs, res.SedimentIDs, res.ReferenceIDs, res.ReferenceIDs)
 			resolveMs := time.Since(resStart).Milliseconds()
 			if rerr != nil {
 				o.Pool.Release(acc)

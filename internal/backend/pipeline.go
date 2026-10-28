@@ -62,7 +62,8 @@ func RunImagePipeline(
 	timing.SSEStreamMs = msSince(t)
 
 	// ---- 阶段 2：事件驱动轮询（流内 asset pointer 作为初始 ID）----
-	fileIDs, sedimentIDs, err := PollFileIDs(ctx, up, conversationID, policy, parser.FileIDs(), nil, timing)
+	// 无参考图可排除：GenerateImageFlow 不接收 images，传 nil。
+	fileIDs, sedimentIDs, err := PollFileIDs(ctx, up, conversationID, policy, parser.FileIDs(), nil, nil, nil, timing)
 	if err != nil {
 		return nil, err
 	}

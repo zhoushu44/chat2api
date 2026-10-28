@@ -39,7 +39,7 @@ func fastPolicy() PollPolicy {
 func TestPollFileIDsSettleConfirm(t *testing.T) {
 	up := &fakeUpstream{readyAt: time.Now().Add(30 * time.Millisecond)}
 	timing := &StageTiming{}
-	ids, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, timing)
+	ids, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, nil, nil, timing)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestPollFileIDsStreamIDsFastPath(t *testing.T) {
 	// 流内已解析出 asset pointer：首次拉取即确认
 	up := &fakeUpstream{readyAt: time.Now()}
 	timing := &StageTiming{}
-	ids, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), []string{"f1"}, nil, timing)
+	ids, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), []string{"f1"}, nil, nil, nil, timing)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestPollFileIDsRateLimited(t *testing.T) {
 	}
 	timing := &StageTiming{}
 	start := time.Now()
-	_, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, timing)
+	_, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, nil, nil, timing)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestPollFileIDsTimeout(t *testing.T) {
 	up := &fakeUpstream{readyAt: time.Now().Add(time.Hour)} // 永不就绪
 	p := fastPolicy()
 	p.Timeout = 50 * time.Millisecond
-	_, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil)
+	_, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil, nil, nil)
 	if !errors.Is(err, ErrPollTimeout) {
 		t.Fatalf("err: %v, want ErrPollTimeout", err)
 	}
@@ -101,7 +101,7 @@ func TestPollFileIDsAdaptiveBackoff(t *testing.T) {
 	// 就绪时间足够晚，触发多次空轮询：等待序列 5ms→10ms→15ms（封顶）
 	up := &fakeUpstream{readyAt: time.Now().Add(80 * time.Millisecond)}
 	timing := &StageTiming{}
-	_, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, timing)
+	_, _, err := PollFileIDs(context.Background(), up, "c", fastPolicy(), nil, nil, nil, nil, timing)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

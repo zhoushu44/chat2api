@@ -102,6 +102,9 @@ type ImageResult struct {
 	FileIDs      []string
 	SedimentIDs  []string
 	ConversationID string // poll/resolve 所需的会话 ID
+	// ReferenceIDs 本次请求上传的参考图 ID。调用方 resolve 时须回传，
+	// 用于把「参考图被当作生成结果返回」的静默兜底挡在应用层之外。
+	ReferenceIDs []string
 	Bytes        [][]byte // 已下载图片（b64 模式）
 	URLs         []string // URL 模式
 	Stage        StageTiming

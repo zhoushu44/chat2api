@@ -17,6 +17,11 @@ type Scheduler struct {
 	Scheduler   *account.Scheduler
 	Svc         *account.Service            // 可选：验活失效账号落盘（StatusDisabled）
 	CheckValid  func(a *account.Account) bool // 可选：验活探测；nil 时仅日志占位
+	// Relogin 重登识别钩子：对验活失败的账号尝试重新登录换取新 token。
+	// 返回 (新 token, 是否重登成功)。只有该钩子明确判定重登失败，账号才标真死号；
+	// 钩子为 nil（未实现重登链路）时，账号标「待重登」而非直接判死。
+	// 这样可以避免「没有 refresh_token / 重登未接线」的账号被误清。
+	Relogin     func(a *account.Account) (newToken string, ok bool)
 	Hour        int
 	Concurrency int
 	Enabled     bool
@@ -129,8 +134,9 @@ func (s *Scheduler) checkDaily() {
 	s.mu.Unlock()
 }
 
-// doDaily401 真实验活：CheckValid 探测失败 → 标失效 + 落盘 + 移出池。
-// 返回移除数；CheckValid 为 nil 时返回 -1（占位未接线，兼容旧行为日志）。
+// doDaily401 真实验活：CheckValid 探测失败的账号先标「待重登」并尝试重登识别，
+// 只有 Relogin 明确返回失败才标真死号（StatusDisabled）。
+// 返回移除数（真死号数）；CheckValid 为 nil 时返回 -1（占位未接线，兼容旧行为日志）。
 func (s *Scheduler) doDaily401() int {
 	if s.Pool == nil {
 		return -1
@@ -155,13 +161,40 @@ func (s *Scheduler) doDaily401() int {
 			if s.CheckValid(acc) {
 				return
 			}
-			log.Printf("[Scheduler] 401验活失败，移除账号 %s", acc.Email)
-			acc.Status = account.StatusDisabled
+			// 验活失败：先进入「待重登」，不要直接判死。
+			acc.Status = account.StatusNeedRelogin
+			// 有重登链路则尝试识别
+			if s.Relogin != nil {
+				newToken, ok := s.Relogin(acc)
+				if ok && newToken != "" {
+					oldToken := acc.Token
+					acc.Token = newToken
+					acc.Status = account.StatusNormal
+					if s.Svc != nil {
+						_ = s.Svc.Add(acc)
+					}
+					// 更新池内索引键
+					s.Pool.Remove(oldToken)
+					s.Pool.Add(acc)
+					log.Printf("[Scheduler] %s 重登成功，已恢复正常", acc.Email)
+					return
+				}
+				// 重登识别失败：这才判真死号
+				log.Printf("[Scheduler] %s 重登失败，判定死号并移除", acc.Email)
+				acc.Status = account.StatusDisabled
+				if s.Svc != nil {
+					_ = s.Svc.Add(acc)
+				}
+				s.Pool.Remove(acc.Token)
+				removed.Add(1)
+				return
+			}
+			// 重登链路未接线：保留「待重登」，不调度但也不清池
+			log.Printf("[Scheduler] %s 验活失败，标记待重登（未接重登链路，不清池）", acc.Email)
 			if s.Svc != nil {
 				_ = s.Svc.Add(acc)
 			}
 			s.Pool.Remove(acc.Token)
-			removed.Add(1)
 		}(a)
 	}
 	wg.Wait()

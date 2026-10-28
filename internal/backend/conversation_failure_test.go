@@ -128,7 +128,7 @@ func TestPollFileIDsFastFail(t *testing.T) {
 	p := fastPolicy()
 	p.Timeout = 60 * time.Second
 	start := time.Now()
-	_, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil)
+	_, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil, nil, nil)
 	if err == nil || !strings.Contains(err.Error(), "upstream_text_reply") {
 		t.Fatalf("err=%v want upstream_text_reply", err)
 	}
@@ -157,7 +157,7 @@ func TestPollFileIDsFlakyNoFalseKill(t *testing.T) {
 	up := &flakyUpstream{}
 	p := fastPolicy()
 	p.Timeout = 10 * time.Second
-	ids, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil)
+	ids, _, err := PollFileIDs(context.Background(), up, "c", p, nil, nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("transient signal must not kill poll: %v", err)
 	}

@@ -169,7 +169,7 @@ func (o *Orchestrator) generateOne(ctx context.Context, be *backend.Backend, acc
 		return nil, err
 	}
 	emit(ImageOutput{Kind: ImageOutputProgress, Index: attempt, Total: attempts, Text: "resolving", AccountEmail: acc.Email, Conversation: res.ConversationID})
-	urls, rerr := be.ResolveImageURLs(ctx, res.ConversationID, res.FileIDs, res.SedimentIDs)
+	urls, rerr := be.ResolveImageURLs(ctx, res.ConversationID, res.FileIDs, res.SedimentIDs, res.ReferenceIDs, res.ReferenceIDs)
 	if rerr != nil {
 		return nil, wrapResolve(rerr)
 	}

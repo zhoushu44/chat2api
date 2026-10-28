@@ -97,6 +97,8 @@ func Classify(err error, statusCode int, body string) ImageFailure {
 		return New("content_policy_violation", msg)
 	case strings.Contains(msg, "decode image base64") || strings.Contains(msg, "illegal base64") || strings.Contains(msg, "invalid_image_input"):
 		return New("invalid_image_input", msg)
+	case strings.Contains(msg, "no_image_generated"):
+		return New("no_image_generated", msg)
 	case strings.Contains(msg, "upstream_text_reply"):
 		return New("upstream_text_reply", msg)
 	case strings.Contains(msg, "unsupported_model") || strings.Contains(msg, "unsupported model") || strings.Contains(msg, "model_not_found") || strings.Contains(msg, "model not found"):

@@ -41,6 +41,11 @@ type Upstream interface {
 //  4. 若 SSE 流内已解析出 asset pointer（initialFileIDs 非空），直接进入 settle 确认，
 //     省去整个探测阶段
 //
+// excludeFileIDs / excludeSedimentIDs：本次请求上传的参考图 ID，全程排除。
+// 会话文档按 author.role 只过滤 assistant/tool，用户自己上传的 attachment
+// 同样会被收进来；若不排除，账号失效时这些参考图 ID 会被当成生成结果返回
+// （线上事故：369 号中 299 失效，同一任务 N 张图字节级等于参考图）。
+//
 // timing 记录各阶段耗时（对等 Python _image_result_timing，用于验证 10s 预算）。
 func PollFileIDs(
 	ctx context.Context,
@@ -48,6 +53,7 @@ func PollFileIDs(
 	conversationID string,
 	policy PollPolicy,
 	initialFileIDs, initialSedimentIDs []string,
+	excludeFileIDs, excludeSedimentIDs []string,
 	timing *StageTiming,
 ) (fileIDs, sedimentIDs []string, err error) {
 	if timing == nil {
@@ -55,8 +61,11 @@ func PollFileIDs(
 	}
 	deadline := time.Now().Add(policy.Timeout)
 
-	fileIDs = uniqueStrings(initialFileIDs)
-	sedimentIDs = uniqueStrings(initialSedimentIDs)
+	excludeFiles := toSet(excludeFileIDs)
+	excludeSediment := toSet(excludeSedimentIDs)
+
+	fileIDs = filterExcluded(uniqueStrings(initialFileIDs), excludeFiles)
+	sedimentIDs = filterExcluded(uniqueStrings(initialSedimentIDs), excludeSediment)
 
 	// settle 确认状态：prevIDs/prevSediment 为上一次观测到的 file_ids/sediment 集合
 	// 对等 Python hit_key=(file_ids, sediment_ids)：任一非空即命中，两组同时稳定才返回
@@ -65,6 +74,8 @@ func PollFileIDs(
 	var prevSediment []string
 	// prevFailCode 速败确认：同一失败信号连续两轮才触发
 	var prevFailCode string
+	// referenceOnlyRounds 参考图独占轮数：连续多轮只见参考图、无新图则速败
+	var referenceOnlyRounds int
 	if sawIDs {
 		prevIDs = append([]string(nil), fileIDs...)
 		prevSediment = append([]string(nil), sedimentIDs...)
@@ -121,8 +132,21 @@ func PollFileIDs(
 			continue
 		}
 		if doc != nil {
-			fileIDs = mergeUnique(fileIDs, doc.FileIDs)
-			sedimentIDs = mergeUnique(sedimentIDs, doc.SedimentIDs)
+			fileIDs = mergeExcluded(doc.FileIDs, fileIDs, excludeFiles)
+			sedimentIDs = mergeExcluded(doc.SedimentIDs, sedimentIDs, excludeSediment)
+			// 参考图独占检测：排除参考图后仍为空，但原始文档里只有参考图 ID，
+			// 且连续多轮没有新图出现 → 上游没真正出图（账号失效的典型表现）。
+			// 必须快速失败，而不是空轮询到超时再把参考图当结果返回。
+			if len(excludeFiles) > 0 || len(excludeSediment) > 0 {
+				if onlyReferences(doc, excludeFiles, excludeSediment) {
+					if referenceOnlyRounds >= 2 {
+						return nil, nil, fmt.Errorf("no_image_generated: 上游未返回新图（会话仅含参考图），账号可能失效")
+					}
+					referenceOnlyRounds++
+				} else {
+					referenceOnlyRounds = 0
+				}
+			}
 		}
 
 		if len(fileIDs) > 0 || len(sedimentIDs) > 0 {
@@ -306,6 +330,72 @@ func mergeUnique(base, extra []string) []string {
 		base = appendUniqueString(base, s)
 	}
 	return base
+}
+
+// toSet 构建 ID 集合（nil 安全：空入参返回 nil，调用方 filterExcluded 走快路径）。
+func toSet(in []string) map[string]struct{} {
+	if len(in) == 0 {
+		return nil
+	}
+	set := make(map[string]struct{}, len(in))
+	for _, s := range in {
+		if s != "" {
+			set[s] = struct{}{}
+		}
+	}
+	if len(set) == 0 {
+		return nil
+	}
+	return set
+}
+
+// filterExcluded 从 list 中去掉 exclude 中的 ID（exclude 为空时原样返回）。
+func filterExcluded(list []string, exclude map[string]struct{}) []string {
+	if len(exclude) == 0 || len(list) == 0 {
+		return list
+	}
+	out := make([]string, 0, len(list))
+	for _, s := range list {
+		if _, bad := exclude[s]; bad {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// mergeExcluded 合并 extra 进 base 的同时排除参考图 ID。
+// 对等 23.0「GenerateImage 轮询时排除参考图 FileID」的修复，此处扩展到
+// sediment ID 与轮询的每一轮观测（此前只挡了初始快照，会话文档每轮仍会带入）。
+func mergeExcluded(extra, base []string, exclude map[string]struct{}) []string {
+	if len(exclude) == 0 {
+		return mergeUnique(base, extra)
+	}
+	return mergeUnique(base, filterExcluded(extra, exclude))
+}
+
+// onlyReferences 判断当前轮文档是否「只有参考图、没有任何新图」。
+// 即：文档里存在 ID，但全部落在排除集内。用于识别账号失效时
+// 「会话里只剩用户上传的 attachment」这一状态。
+func onlyReferences(doc *ConversationDoc, excludeFiles, excludeSediment map[string]struct{}) bool {
+	if doc == nil {
+		return false
+	}
+	total := len(doc.FileIDs) + len(doc.SedimentIDs)
+	if total == 0 {
+		return false // 空文档不算「只有参考图」，走常规空轮询逻辑
+	}
+	for _, id := range doc.FileIDs {
+		if _, bad := excludeFiles[id]; !bad {
+			return false // 有非参考图的新 file_id
+		}
+	}
+	for _, id := range doc.SedimentIDs {
+		if _, bad := excludeSediment[id]; !bad {
+			return false // 有非参考图的新 sediment_id
+		}
+	}
+	return true
 }
 
 func equalStringSets(a, b []string) bool {

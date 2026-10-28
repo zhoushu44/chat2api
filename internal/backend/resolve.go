@@ -13,16 +13,24 @@ import (
 
 // ResolveImageURLs 将 file_ids / sediment_ids 解析为可下载 URL
 // 对等 openai_backend_api.py:3078 _resolve_image_urls / 3000 _get_file_download_url
-func (b *Backend) ResolveImageURLs(ctx context.Context, conversationID string, fileIDs, sedimentIDs []string) ([]string, error) {
+//
+// excludeFileIDs / excludeSedimentIDs：本次请求上传的参考图 ID，全程排除。
+// 排除后若一个 ID 都不剩，说明上游没有真正产出新图（账号失效时的典型表现：
+// 会话文档里只剩用户自己上传的 attachment）。此时返回 no_image_generated
+// 让上层换号重试，而不是把参考图原样当作生成结果返回。
+func (b *Backend) ResolveImageURLs(ctx context.Context, conversationID string, fileIDs, sedimentIDs []string, excludeFileIDs, excludeSedimentIDs []string) ([]string, error) {
+	excludeFiles := toSet(excludeFileIDs)
+	excludeSediment := toSet(excludeSedimentIDs)
+
 	var urls []string
-	for _, fid := range fileIDs {
+	for _, fid := range filterExcluded(fileIDs, excludeFiles) {
 		u, err := b.getFileDownloadURL(ctx, fid)
 		if err != nil {
 			return nil, err
 		}
 		urls = append(urls, u)
 	}
-	for _, sid := range sedimentIDs {
+	for _, sid := range filterExcluded(sedimentIDs, excludeSediment) {
 		u, err := b.getSedimentDownloadURL(ctx, conversationID, sid)
 		if err != nil {
 			return nil, err

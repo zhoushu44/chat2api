@@ -450,14 +450,40 @@ func (b *Backend) GenerateImage(ctx context.Context, prompt, model string, image
 
 	// 6. poll
 	pollStart := time.Now()
-	fileIDs, sedimentIDs, err := PollFileIDs(ctx, b, conversationID, policy, parser.FileIDs(), nil, timing)
+	// 参考图 ID 全程排除：会话文档按 author.role 只过滤 assistant/tool，
+	// 用户上传的 attachment 同样会被收进 file_ids/sediment_ids。账号失效时
+	// 这些 ID 会被当成生成结果返回（线上事故：返回图字节级等于参考图）。
+	var excludeFileIDs, excludeSedimentIDs []string
+	for _, ref := range refs {
+		if ref.FileID != "" {
+			excludeFileIDs = append(excludeFileIDs, ref.FileID)
+			// 上游 attachment 既可能以 file-service:// 也可能以 sediment:// 暴露，
+			// 两组都排除，避免漏一类。
+			excludeSedimentIDs = append(excludeSedimentIDs, ref.FileID)
+		}
+	}
+	fileIDs, sedimentIDs, err := PollFileIDs(ctx, b, conversationID, policy, parser.FileIDs(), nil, excludeFileIDs, excludeSedimentIDs, timing)
 	if err != nil {
 		return nil, err
 	}
 	_ = pollStart
 
+	// 收口：排除参考图后一个 ID 都不剩 → 上游没真正出图。
+	// 典型场景：账号失效（会话只回 "Hi! 欢迎回来！" 之类的文本），
+	// 会话文档里剩下的全是用户自己上传的 attachment。
+	// 必须报错而非返回空结果，否则上层会把参考图当作生成结果落盘。
+	if len(fileIDs) == 0 && len(sedimentIDs) == 0 && len(refs) > 0 {
+		return nil, fmt.Errorf("no_image_generated: 上游未返回新图（已排除 %d 张参考图），账号可能失效", len(refs))
+	}
+
 	timing.TotalMs = time.Since(startAll).Milliseconds()
-	return &ImageResult{FileIDs: fileIDs, SedimentIDs: sedimentIDs, ConversationID: conversationID, Stage: *timing}, nil
+	return &ImageResult{
+		FileIDs:       fileIDs,
+		SedimentIDs:   sedimentIDs,
+		ConversationID: conversationID,
+		ReferenceIDs:  excludeFileIDs,
+		Stage:         *timing,
+	}, nil
 }
 
 // RealPipeline 供 TestRealPipeline 使用的轻量包装：

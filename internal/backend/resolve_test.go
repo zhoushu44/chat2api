@@ -29,7 +29,7 @@ func TestResolveSedimentDirect(t *testing.T) {
 	defer srv.Close()
 
 	be := NewBackendWithClient(srv.URL, "tok", &fhttpAdapter{client: srv.Client()})
-	urls, err := be.ResolveImageURLs(context.Background(), "conv-1", nil, []string{"sed-1"})
+	urls, err := be.ResolveImageURLs(context.Background(), "conv-1", nil, []string{"sed-1"}, nil, nil)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestResolveSedimentFallback(t *testing.T) {
 	defer srv.Close()
 
 	be := NewBackendWithClient(srv.URL, "tok", &fhttpAdapter{client: srv.Client()})
-	urls, err := be.ResolveImageURLs(context.Background(), "conv-1", nil, []string{"sed-1"})
+	urls, err := be.ResolveImageURLs(context.Background(), "conv-1", nil, []string{"sed-1"}, nil, nil)
 	if err != nil {
 		t.Fatalf("Resolve fallback: %v", err)
 	}
