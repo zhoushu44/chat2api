@@ -1,0 +1,38 @@
+# 线上生产部署形态（服务器 /root/chat2api/deploy/single/docker-compose.yml 的存档副本）
+#
+# 与仓库根目录 docker-compose.yml 的差异：
+#   * network_mode: host —— 线上直接用宿主网络栈，容器内进程监听 3077
+#   * 挂载绝对路径（服务器路径），本地不可直接复用
+#   * regiforge 用外部独立容器（见 supervisord.conf 的 autostart=false）
+#   * CHATGPT_SENTINEL_MODE=auto —— 线上开启 sentinel 自动求解
+#
+# 本地开发请用根目录的 docker-compose.yml（3077:3077 端口映射 + ./data 卷）。
+
+services:
+  chatgpt2api:
+    image: zhoushu1/chat2api:24.1
+    container_name: chatgpt2api-14
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    volumes:
+      - /root/chat2api/deploy/gray/data:/data
+      - /root/chat2api/deploy/single/regiforge-data:/opt/regiforge/data
+      - /root/chat2api/deploy/single/supervisord.conf:/etc/supervisor/conf.d/supervisord.conf:ro
+    environment:
+      - STORAGE_BACKEND=json
+      - CHATGPT2API_AUTH_KEY=${CHATGPT2API_AUTH_KEY:-}
+      # RegiForge：线上为 host 网络，指向本机独立 regiforge 容器
+      - REGIFORGE_BASE_URL=http://127.0.0.1:8787
+      - REGIFORGE_PROJECT_ID=chatgpt_register
+      - REGIFORGE_PROXY_ID=wary
+      - REGIFORGE_EMAIL_ID=mailnest
+      # 注册成功账号自动导回本服务
+      - REGIFORGE_EXPORT_BASE_URL=http://127.0.0.1:3077
+      - REGIFORGE_EXPORT_ADMIN_PASSWORD=${CHATGPT2API_AUTH_KEY:-}
+      # 线上开启 sentinel 自动求解
+      - CHATGPT_SENTINEL_MODE=auto
+      - OPENAI_SENTINEL_NODE_PATH=/usr/bin/node
+      - DISPLAY=:99
+      - TZ=Asia/Shanghai
+    shm_size: "64m"

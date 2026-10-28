@@ -3,6 +3,9 @@
 *.exe~
 *.out
 /bin/
+/_out/
+/chatgpt2api-go
+/chatgpt2api-go-linux
 
 # 本地运行日志
 *.log

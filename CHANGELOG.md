@@ -1,1 +1,50 @@
 # Changelog
+
+本文件记录 Go 版 `chatgpt2api` 的版本变更。
+版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
+
+## 24.1
+
+**类型**：源码对齐 + 部署修正（无新功能）
+
+- **源码对齐服务器生产树**
+  - 297 个 `internal/cmd/go.mod/go.sum` 文件与服务器 `/root/chat2api` 字节级一致（生产 23.0-fix10 实际运行源码）
+  - 删除本地分叉、服务器不存在的模块：`internal/superres/`、`internal/scheduler/{settings,token_exp}.go`、`internal/settings/settings.go`、`internal/account/oauth/{sentinel,totp}.go`、`internal/api/admin/{gallery,logs,monitor,scheduler}.go`、`internal/api/{settings,provider_conn}.go`
+  - 清理误提交的临时脚本与源码快照：`_s*.py`、`server_src/`、`src_snapshot/`
+- **RegiForge 导出器重写**（`regiforge/export/chatgpt2api/provider.py`）
+  - 改为单账号 `POST /api/accounts` + `quota_unknown`，修掉此前批量导入的失败
+- **前端产物同步**：`internal/api/web_dist/assets/*` 更新为服务器当前版本
+- **Dockerfile**：入库「服务器叠加构建」版（golang:1.26-alpine 编译 + 23.0 运行层）
+- **修正标签与内容不一致**：`VERSION` 与 CI `TAG_MAJOR` 由错误的 Python 项目版本 `v3.2.1` / `24.0` 统一为 `24.1`
+
+> 说明：git tag `24.0` 是个残次品——该次提交未包含 fix1~fix10，CI 据此构建的 24.0 镜像缺失修复。
+> 线上实际运行的 `zhoushu1/chat2api:24.0` 镜像内是 fix1~fix10 之后的代码，即本 tag 24.1 对应的源码。
+
+## 24.0
+
+- RegiForge 导出器重写（bug 修复）
+
+## 23.0
+
+- **核心修复**：批量套图结果大量重复 —— `GenerateImage` 轮询时排除参考图 `FileID`
+
+## 22.0
+
+- 修 Bug：日志详情误报错误
+
+## 21.0
+
+- 修复验活误杀（39 僵尸号根因）
+
+## 20.1
+
+- 修复协议恢复与额度：真 `sdk.js` 求解 sentinel；额度改用 `conversation/init`
+- CI 镜像标签 20.0 -> 20.1
+
+## 20.0
+
+- CI 镜像版本标签 19.0 -> 20.0
+
+## 19.0
+
+- 真实 2K/4K：尺寸校验放开 + 精确缩放 + 4 倍档转 JPEG

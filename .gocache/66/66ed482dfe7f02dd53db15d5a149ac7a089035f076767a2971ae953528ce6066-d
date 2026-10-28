@@ -1,5 +1,0 @@
-./bpe.go
-./core_bpe.go
-./encoding.go
-./load.go
-./tiktoken.go

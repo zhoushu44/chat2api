@@ -1,8 +1,0 @@
-./exif.go
-./lanczos.go
-./pagination.go
-./service.go
-./storage.go
-./webdav.go
-./service_test.go
-./webdav_test.go

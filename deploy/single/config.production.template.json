@@ -1,0 +1,16 @@
+# 线上生产 /data/config.json 的脱敏模板（服务器：/root/chat2api/deploy/gray/data/config.json）
+#
+# 用法：复制为 data/config.json 后填入本机真实值。
+#   - auth-key    = 管理密钥，本地任意非空即可
+#   - proxy       = 生图出站代理。线上为 socks5://127.0.0.1:20001（宿主机 warp 实例出口），
+#                   本地需换成自己的非 CN 出口，留空则直连（chatgpt.com 在 CN 会被拒）
+#   - data_dir    = 容器内固定 /data，不要改
+{
+  "auth-key": "change-me-local",
+  "proxy": "",
+  "data_dir": "/data",
+  "account": {
+    "image_max_account_attempts": 6,
+    "image_account_concurrency": 1
+  }
+}
