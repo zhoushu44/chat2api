@@ -3,6 +3,15 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.9
+
+**类型**：生图输出统一 JPG
+
+- 下载层将 PNG/WebP/GIF 真实转码为 JPEG，不再按上游 Content-Type 保存 `.webp`。
+- 新落盘图片统一 `.jpg`；已是 JPEG 的输入不重复压缩。
+- 透明像素以白色背景合成，避免 JPEG 黑底。
+- 增加 PNG→JPEG 真转码与 JPEG 不重复压缩测试。
+
 ## 24.8
 
 **类型**：图片通配路由修正

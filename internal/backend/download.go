@@ -129,11 +129,16 @@ func (b *Backend) downloadToBytes(ctx context.Context, imageURL string) ([]byte,
 	if tmpBuf.Len() == 0 {
 		return nil, "", fmt.Errorf("image download returned an empty response")
 	}
-	ctype := resp.Header.Get("Content-Type")
 	// 拷贝出独立 bytes，避免复用污染
 	out := make([]byte, tmpBuf.Len())
 	copy(out, tmpBuf.Bytes())
-	return out, ctype, nil
+	ctype := resp.Header.Get("Content-Type")
+	// 统一输出 JPG：上游 PNG/WebP 也真实转码，避免只改扩展名导致格式不符。
+	converted, convertedType, err := toJPEG(out, ctype)
+	if err != nil {
+		return nil, "", fmt.Errorf("convert image to jpeg: %w", err)
+	}
+	return converted, convertedType, nil
 }
 
 func (b *Backend) downloadToFile(ctx context.Context, imageURL, dir string, index int) (string, error) {
@@ -154,26 +159,22 @@ func (b *Backend) downloadToFile(ctx context.Context, imageURL, dir string, inde
 		bts, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", ensureOK(resp.StatusCode, resp.Header.Get("Retry-After"), bts, "image_download", downloadCredentialScope(imageURL, b.BaseURL))
 	}
-	ext := ".png"
-	if ct := resp.Header.Get("Content-Type"); ct != "" {
-		if stringsContains(ct, "jpeg") || stringsContains(ct, "jpg") {
-			ext = ".jpg"
-		} else if stringsContains(ct, "webp") {
-			ext = ".webp"
-		}
-	}
-	filename := fmt.Sprintf("%s_%d%s", time.Now().Format("150405"), index, ext)
-	path := filepath.Join(dir, filename)
-	f, err := os.Create(path)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("read image body: %w", err)
 	}
-	defer f.Close()
-	bufPtr := bufPool.Get().(*[]byte)
-	defer bufPool.Put(bufPtr)
-	if _, err := io.CopyBuffer(f, resp.Body, *bufPtr); err != nil {
-		_ = os.Remove(path)
-		return "", fmt.Errorf("save image: %w", err)
+	if len(data) == 0 {
+		return "", fmt.Errorf("image download returned an empty response")
+	}
+	// 统一保存为 .jpg；即使上游是 PNG/WebP，也在此真实转码。
+	jpg, _, err := toJPEG(data, resp.Header.Get("Content-Type"))
+	if err != nil {
+		return "", fmt.Errorf("convert image to jpeg: %w", err)
+	}
+	filename := fmt.Sprintf("%s_%d.jpg", time.Now().Format("150405"), index)
+	path := filepath.Join(dir, filename)
+	if err := os.WriteFile(path, jpg, 0644); err != nil {
+		return "", err
 	}
 	return path, nil
 }
