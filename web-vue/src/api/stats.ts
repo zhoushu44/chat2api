@@ -42,6 +42,8 @@ function adaptDashboardToStats(dashboard: DashboardResponse): AdminStats {
   const limited = Number(accounts.limited || 0)
   const abnormal = Number(accounts.abnormal || 0)
   const disabled = Number(accounts.disabled || 0)
+  const needRelogin = Number(accounts.need_relogin || 0)
+  const imageBlocked = Number(accounts.image_blocked || 0)
   const total = Number(accounts.total || 0)
   const failedAccounts = abnormal + disabled
   const idleAccounts = Math.max(total - active - limited - failedAccounts, 0)
@@ -54,6 +56,8 @@ function adaptDashboardToStats(dashboard: DashboardResponse): AdminStats {
     active_accounts: active,
     abnormal_accounts: abnormal,
     disabled_accounts: disabled,
+    need_relogin_accounts: needRelogin,
+    image_blocked_accounts: imageBlocked,
     failed_accounts: failedAccounts,
     rate_limited_accounts: limited,
     idle_accounts: idleAccounts,

@@ -88,10 +88,18 @@ export function useDashboardPage() {
       iconColor: 'text-amber-600'
     },
     {
-      label: '异常账号',
+      label: '待重登',
       value: '0',
       meta: '',
-      icon: 'lucide:alert-circle',
+      icon: 'lucide:refresh-cw',
+      iconBg: 'bg-amber-100',
+      iconColor: 'text-amber-600'
+    },
+    {
+      label: '生图失效',
+      value: '0',
+      meta: '',
+      icon: 'lucide:image-off',
       iconBg: 'bg-rose-100',
       iconColor: 'text-rose-600'
     },
@@ -441,11 +449,12 @@ export function useDashboardPage() {
     stats.value[0].value = formatStatNumber(overview.total_accounts)
     stats.value[1].value = formatStatNumber(overview.active_accounts)
     stats.value[2].value = formatStatNumber(overview.rate_limited_accounts)
-    stats.value[3].value = formatStatNumber(overview.abnormal_accounts)
-    stats.value[4].value = formatStatNumber(overview.disabled_accounts)
+    stats.value[3].value = formatStatNumber(overview.need_relogin_accounts)
+    stats.value[4].value = formatStatNumber(overview.image_blocked_accounts)
+    stats.value[5].value = formatStatNumber(overview.disabled_accounts)
     const totalQuota = Number(overview.total_quota || 0)
-    stats.value[5].value = formatStatNumber(totalQuota)
-    stats.value[5].meta = ''
+    stats.value[6].value = formatStatNumber(totalQuota)
+    stats.value[6].meta = ''
   }
 
   function getTrendPayload(overview: OverviewPayload) {

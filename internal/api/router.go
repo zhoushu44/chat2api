@@ -327,7 +327,8 @@ func (s *Server) handleDashboard(c *gin.Context) {
 	// 账号统计（对等 account_service.get_stats + dashboard.accounts 形状）
 	acc := gin.H{
 		"total": 0, "cumulative_total": 0, "active": 0, "limited": 0, "abnormal": 0,
-		"disabled": 0, "total_quota": 0, "unlimited_quota_count": 0, "unknown_quota_count": 0,
+		"disabled": 0, "need_relogin": 0, "image_blocked": 0,
+		"total_quota": 0, "unlimited_quota_count": 0, "unknown_quota_count": 0,
 		"total_success": 0, "total_fail": 0, "by_type": map[string]int{}, "healthy": false,
 	}
 	byType := map[string]int{}
@@ -356,6 +357,10 @@ func (s *Server) handleDashboard(c *gin.Context) {
 				acc["limited"] = acc["limited"].(int) + 1
 			case account.StatusDisabled:
 				acc["disabled"] = acc["disabled"].(int) + 1
+			case account.StatusNeedRelogin:
+				acc["need_relogin"] = acc["need_relogin"].(int) + 1
+			case account.StatusImageBlocked:
+				acc["image_blocked"] = acc["image_blocked"].(int) + 1
 			default:
 				if a.ValidityStatus == "invalid" {
 					acc["abnormal"] = acc["abnormal"].(int) + 1

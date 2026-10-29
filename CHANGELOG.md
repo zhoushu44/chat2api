@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.5
+
+**类型**：首页账号分类统计
+
+- 首页账号卡片更新为：账号总数、正常账号、限流账号、待重登、生图失效、已禁用、剩余额度。
+- `/api/dashboard` 新增 `need_relogin`、`image_blocked` 独立计数，不再混入禁用或异常。
+- 与账号页的状态分类保持一致。
+
 ## 24.4
 
 **类型**：面板登录修复
