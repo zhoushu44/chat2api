@@ -3,6 +3,16 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.6
+
+**类型**：日志与图片管理真实 API
+
+- `/api/logs` 返回真实生图调用记录、统计与筛选；`/api/runtime-logs` 返回运行日志。
+- `/api/images` 支持图片分页、类型/标签/搜索过滤；`/api/images/storage` 返回真实图片数量、体积和磁盘空间。
+- 支持图片下载、批量打包、删除、标签读取/更新/删除，并拦截路径穿越。
+- `/api/image-tasks` 支持真实生图/图生图任务创建、查询、额度摘要与续轮询。
+- 补充日志 JSON、图片列表/存储统计、路径安全测试。
+
 ## 24.5
 
 **类型**：首页账号分类统计

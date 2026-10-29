@@ -181,6 +181,11 @@ func (s *Server) NewRouter() *gin.Engine {
 	(&admin.SchedulerHandler{Sched: s.Scheduler, DataDir: dataDir, DefEnabled: s.Scheduler != nil && s.Scheduler.Enabled}).Register(adminGroup)
 	// 系统设置与「自动移除异常账号」热更新。
 	(&SettingsHandler{Store: settings.NewStore(dataDir), Sched: s.Scheduler}).Register(adminGroup)
+	// 真实日志与图片库管理，不再落入 SPA 静态页。
+	(&LogsHandler{Svc: s.LogSvc, Runtime: logsvc.NewRuntime()}).Register(adminGroup)
+	(&ImagesHandler{DataDir: dataDir}).Register(adminGroup)
+	// 图像任务创建、查询与额度摘要。
+	(&ImageTasksHandler{Tasks: s.Tasks, Orch: s.Orch, Accounts: s.Accounts}).Register(adminGroup)
 	if s.Tasks != nil {
 		RegisterImageTasks(adminGroup, s.Tasks)
 	}
