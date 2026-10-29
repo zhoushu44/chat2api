@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.3
+
+**类型**：显式 total 标记持久化
+
+- 修复 `ExplicitTotal` 在 `normalize()` 重建 Config 时丢失，导致 `/start` 传入的 total 仍按差额补齐计算。
+- `Update()` 合并后显式回写标记。
+
 ## 25.2
 
 **类型**：register total 语义修正

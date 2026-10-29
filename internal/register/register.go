@@ -215,6 +215,9 @@ func normalize(raw Config) Config {
 		cfg.Mail.ApiUseRegisterProxy = raw.Mail.ApiUseRegisterProxy
 	}
 	cfg.Channel = runtimeChannel()
+	// 保留「显式指定数量」标记：normalize 重建 Config，必须显式传递，
+	// 否则 /start 传入的 total 会被当成「补到池子总数」。
+	cfg.ExplicitTotal = raw.ExplicitTotal
 	// stats 保留运行时字段
 	if raw.Stats.Threads != 0 {
 		cfg.Stats = raw.Stats
@@ -407,6 +410,13 @@ func (s *Service) Update(updates map[string]any) Config {
 	var merged Config
 	nb, _ := json.Marshal(base)
 	_ = json.Unmarshal(nb, &merged)
+	explicit := s.cfg.ExplicitTotal
+	if n, ok := updates["total"]; ok {
+		if f, ok2 := n.(float64); ok2 && f > 0 {
+			explicit = true
+		}
+	}
+	merged.ExplicitTotal = explicit
 	s.cfg = normalize(merged)
 	s.appendLogLocked(fmt.Sprintf("配置已更新 auto_refill=%v interval=%d total=%d threads=%d mode=%s", s.cfg.AutoRefill, s.cfg.AutoRefillInterval, s.cfg.Total, s.cfg.Threads, s.cfg.Mode), "info")
 	s.saveLocked()
