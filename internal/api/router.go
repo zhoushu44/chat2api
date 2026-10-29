@@ -141,6 +141,8 @@ func (s *Server) NewRouter() *gin.Engine {
 		v1g.POST("/chat/completions", s.handleChatCompletions)
 		v1g.POST("/responses", s.handleResponses)
 		v1g.POST("/messages", s.handleMessages)
+		// 图片预览/下载走真实文件，不允许 SPA 回退返回 HTML。
+		(&ImagesHandler{DataDir: dataDir}).RegisterPublicImages(v1g)
 	}
 	if s.Register == nil {
 		dir := ""

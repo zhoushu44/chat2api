@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.7
+
+**类型**：图片预览与日志展示修正
+
+- 图片预览走 `/v1/images/:path` 真实文件接口，不再被 SPA 回退为 HTML。
+- 图片列表 URL 同步改为 `/v1/images/...`，与 `/api/images` 管理接口分离。
+- 日志时间统一为 `YYYY-MM-DD HH:mm:ss`，不再显示带纳秒的原始 RFC3339 字符串。
+
 ## 24.6
 
 **类型**：日志与图片管理真实 API

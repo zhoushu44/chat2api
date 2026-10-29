@@ -47,6 +47,10 @@ func (h *ImagesHandler) Register(r *gin.RouterGroup) {
 	r.GET("/images/:path", h.ServeImage)
 }
 
+func (h *ImagesHandler) RegisterPublicImages(r *gin.RouterGroup) {
+	r.GET("/images/:path", h.ServeImage)
+}
+
 func (h *ImagesHandler) root() string { return filepath.Join(h.DataDir, "images") }
 
 func safeImageRel(raw string) (string, error) {
@@ -128,7 +132,7 @@ func (h *ImagesHandler) scan() ([]imageFile, int64, error) {
 		rel = filepath.ToSlash(rel)
 		total += info.Size()
 		files = append(files, imageFile{
-			Path: rel, Name: entry.Name(), URL: "/images/" + rel, Thumbnail: "/images/" + rel,
+			Path: rel, Name: entry.Name(), URL: "/v1/images/" + rel, Thumbnail: "/v1/images/" + rel,
 			Size: info.Size(), CreatedAt: info.ModTime().UTC().Format(time.RFC3339),
 			Type: imageMediaType(rel), Tags: tags[rel], Storage: "local", Local: true, Webdav: false,
 		})

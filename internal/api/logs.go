@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
 	"chatgpt2api/internal/logsvc"
 
@@ -84,13 +83,13 @@ func (h *LogsHandler) List(c *gin.Context) {
 			continue
 		}
 		items = append(items, gin.H{
-			"id": call.ID, "time": call.CreatedAt, "type": "image",
+			"id": call.ID, "time": call.CreatedAt.Format("2006-01-02 15:04:05"), "type": "image",
 			"summary": call.Model + " 调用" + statusText(status),
 			"detail": gin.H{
 				"status": status, "model": call.Model, "endpoint": endpoint,
 				"account_email": account, "request_text": call.Prompt,
 				"error_code": code, "error": errorText(status, code),
-				"started_at": call.CreatedAt, "ended_at": call.CreatedAt,
+				"started_at": call.CreatedAt.Format("2006-01-02 15:04:05"), "ended_at": call.CreatedAt.Format("2006-01-02 15:04:05"),
 			},
 		})
 	}
@@ -163,5 +162,3 @@ func minInt(a, b int) int {
 	}
 	return b
 }
-
-var _ = time.Now
