@@ -177,6 +177,8 @@ class ChatGPTRegisterProject(RegistrationProject):
                 fetch_refresh_token=fetch_refresh,
                 sentinel_refresh=sentinel_refresh,
                 reacquire_proxy=reacquire_proxy,
+                # 新版引擎无条件强制绑定 TOTP 2FA（无 bind_2fa 开关），
+                # 下面的收口校验确保不会产出缺 TOTP 的残号。
                 log=ctx.log,
             )
             token = result.get("access_token") or ""

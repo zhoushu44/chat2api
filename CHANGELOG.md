@@ -3,6 +3,16 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.4
+
+**类型**：注册失败根因修复（warp 会话冷启动）
+
+- 根因：warp 粘性会话刚建立时隧道未就绪，**每个新会话第一次请求必定失败**（Connection closed / 000），注册第 1 步 Sentinel 提取直接判死。
+- 修复：`WaryProxyProvider.acquire()` 拿到代理后先做 HTTP 预热，打通隧道再交付使用，失败重试 3 次不抛错。
+- 实测：预热前 10 个新会话 0/10 成功；预热后 10/10 成功。
+- 注册实测：连续两批 2/2 成功，`[2FA] TOTP 绑定成功` + `注册收口完成：密码 + TOTP 2FA + 验活 全通过`，新账号 4/4 全部带 password + TOTP。
+- 同步补齐容器内缺失的 `_sentinel_v8.py` 与 `sentinel_vm/`（sdk.js、runner、server、version.txt），新版 Sentinel V8 生效。
+
 ## 25.3
 
 **类型**：显式 total 标记持久化

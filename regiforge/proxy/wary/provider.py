@@ -120,7 +120,33 @@ class WaryProxyProvider(ProxyProvider):
                 password=proxy_info.password,
                 meta=meta,
             )
-        return self._with_auth_forwarder(proxy_info)
+        proxy_info = self._with_auth_forwarder(proxy_info)
+        if proxy_info is not None:
+            await self._warmup(proxy_info.server)
+        return proxy_info
+
+    async def _warmup(self, server: str, rounds: int = 3) -> bool:
+        """预热新会话：WARP 粘性会话刚建立时隧道尚未就绪，首次请求常直接失败
+        （Connection closed / 超时），会让注册第 1 步 Sentinel 直接判死。
+        这里用真实请求打通隧道；失败只重试，不抛错（调用方还有整段重试兜底）。
+        """
+        import httpx as _httpx
+
+        for _ in range(rounds):
+            try:
+                async with _httpx.AsyncClient(
+                    timeout=_httpx.Timeout(8.0),
+                    proxy=server,
+                    verify=False,
+                ) as client:
+                    resp = await client.get("https://www.cloudflare.com/cdn-cgi/trace")
+                    if resp.status_code < 500:
+                        return True
+            except Exception:
+                pass
+            await asyncio.sleep(0.8)
+        return False
+
 
     async def release(self, proxy: ProxyInfo, failure_type: str | None = None) -> None:
         # Stop forwarder if present (release listening socket + threads)
