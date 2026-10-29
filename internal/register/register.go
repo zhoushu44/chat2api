@@ -79,6 +79,9 @@ type Config struct {
 	Stats              Stats             `json:"stats"`
 	Logs               []LogEntry        `json:"logs"` // 仅内存展示，持久化时另存
 	AutoFollow         bool              `json:"auto_follow,omitempty"`
+	// ExplicitTotal 调用方明确指定了 total：此时按 total 精确注册，
+	// 不被 mode=available/quota 的默认目标覆盖（避免固定 200）。
+	ExplicitTotal bool `json:"-"`
 }
 
 // Service 注册服务，包含简易状态机 + 任务参数持久化 + 自动注册巡检
@@ -394,6 +397,11 @@ func (s *Service) Update(updates map[string]any) Config {
 		switch k {
 		case "total", "threads", "mode", "target_quota", "target_available", "check_interval", "auto_refill", "auto_refill_interval", "proxy", "mail", "enabled", "channel", "auto_follow":
 			base[k] = v
+			if k == "total" {
+				if n, ok := v.(float64); ok && n > 0 {
+					s.cfg.ExplicitTotal = true
+				}
+			}
 		}
 	}
 	var merged Config
@@ -423,6 +431,14 @@ func (s *Service) Start() Config {
 	threads := s.cfg.Threads
 	target := total
 	plan := total
+	// 显式限额：total 大于 0 且调用方明确要注册 total 个时，不让 mode 的默认目标覆盖。
+	// 页面「数量」输入框写多少就注册多少，避免 available 模式固定 200。
+	explicitTotal := s.cfg.ExplicitTotal && total > 0
+	if explicitTotal {
+		plan = total
+		target = total
+		mode = "total"
+	}
 	switch mode {
 	case "quota":
 		plan = s.cfg.TargetQuota
@@ -430,8 +446,7 @@ func (s *Service) Start() Config {
 	case "available":
 		plan = s.cfg.TargetAvailable
 		target = plan
-	default:
-		// total 模式：差额补齐
+	default:		// total 模式：差额补齐
 		poolTotal := 0
 		if s.poolFunc != nil {
 			poolTotal = s.poolFunc()
@@ -649,6 +664,10 @@ func (s *Service) Stop() Config {
 	taskID := s.cfg.Stats.TaskID
 	s.cfg.Enabled = false
 	s.cfg.AutoFollow = false
+	// 停止即回写终态：running 归零，保留 success/fail 统计，避免页面仍显示「运行中」。
+	s.cfg.Stats.Running = 0
+	s.cfg.Stats.FinishedAt = nowISO()
+	s.cfg.Stats.UpdatedAt = nowISO()
 	s.appendLogLocked("正在停止任务", "yellow")
 	s.saveLocked()
 	clone := s.cfg

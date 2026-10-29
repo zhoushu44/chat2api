@@ -81,7 +81,9 @@ class ChatGPTRegisterProject(RegistrationProject):
         if register_mode not in ("browser", "http"):
             register_mode = "browser"
         fetch_refresh = bool(project_cfg.get("http_fetch_refresh_token", True))
-        enable_2fa = bool(project_cfg.get("enable_2fa", False))
+        # 强制绑定 TOTP 2FA：没有 TOTP 的账号在 AT 失效后无法协议恢复，
+        # 只能靠邮箱 OTP，实际等于死号。默认开启，可用 enable_2fa=false 显式关闭。
+        enable_2fa = bool(project_cfg.get("enable_2fa", True))
         _2fa_timeout = float(project_cfg.get("2fa_timeout") or 120)
         # 注册收口（强制，不读配置开关）：HTTP 模式必然 设密码 + 绑 TOTP 2FA + 立即验活，
         # 三项任一失败即注册失败（详见 docs/需求-注册存活率对齐.md 需求 1）
@@ -348,17 +350,37 @@ class ChatGPTRegisterProject(RegistrationProject):
                     # 订阅类型：从 access_token JWT 的 chatgpt_plan_type 解码（free/plus/pro/team）
                     "plan_type": _decode_jwt_plan_type(token) if token else "",
                 }
-                
-                # 如启用 2FA，添加到 extra
-                if enable_2fa and _2fa_result:
-                    if _2fa_result.get("enabled"):
-                        extra["2fa_enabled"] = True
-                        extra["totp_secret"] = _2fa_result.get("totp_secret") or ""
-                        extra["backup_codes"] = _2fa_result.get("backup_codes") or []
-                        ctx.log("✅ 2FA 已配置并保存")
-                    else:
-                        extra["2fa_enabled"] = False
-                        ctx.log("⚠️ 2FA 未成功启用")
+
+                # 注册收口：密码 + TOTP 缺一不可，否则账号在 AT 失效后无法协议恢复。
+                # 与 http 模式保持同一标准，不允许「只有密码」或「只有 TOTP」的残号入库。
+                _pwd = (profile or {}).get("password") or ""
+                if _pwd:
+                    extra["password"] = _pwd
+                    extra["has_password"] = True
+                _totp = (_2fa_result or {}).get("totp_secret") or ""
+                if not _pwd:
+                    return await dbg.fail(
+                        page,
+                        context,
+                        step_id="run_browser",
+                        status="fail_browser_no_password",
+                        error="浏览器模式未拿到密码：无法协议恢复（注册收口要求）",
+                        failure_class="exception",
+                    )
+                if not (enable_2fa and _totp):
+                    return await dbg.fail(
+                        page,
+                        context,
+                        step_id="run_browser",
+                        status="fail_browser_no_2fa",
+                        error="TOTP 2FA 未绑定：无法协议恢复（注册收口要求）",
+                        failure_class="exception",
+                    )
+                extra["totp_secret"] = _totp
+                extra["mfa_enabled"] = True
+                extra["2fa_enabled"] = True
+                extra["backup_codes"] = (_2fa_result or {}).get("backup_codes") or []
+                ctx.log("✅ 注册收口完成：密码 + TOTP 2FA 全通过")
                 
                 return dbg.ok_result(
                     apikey=token,

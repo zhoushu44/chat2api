@@ -81,6 +81,16 @@ func RegisterRegisterAdmin(api *gin.RouterGroup, svc *register.Service) {
 		c.JSON(http.StatusOK, gin.H{"register": cfg})
 	})
 	api.POST("/start", func(c *gin.Context) {
+		// 允许在启动请求里直接覆盖 total/threads/mode，避免必须两次调用。
+		var body map[string]any
+		if err := c.ShouldBindJSON(&body); err == nil && len(body) > 0 {
+			if v, ok := body["register"]; ok {
+				if m, ok := v.(map[string]any); ok {
+					body = m
+				}
+			}
+			svc.Update(body)
+		}
 		cfg := svc.Start()
 		c.JSON(http.StatusOK, gin.H{"register": cfg})
 	})

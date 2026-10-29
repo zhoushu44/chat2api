@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.1
+
+**类型**：注册链路三处修复
+
+- `/api/register/start` 支持直接传 `total/threads/mode`；显式 total 优先，不再被 `mode=available` 固定 200 覆盖。
+- 停止任务时回写 `running=0` 与 `finished_at`，页面不再显示运行中。
+- 注册强制绑定 TOTP 2FA（默认开启）；browser 模式补齐 password 字段，缺密码或缺 TOTP 直接判失败，不再产出无法协议恢复的残号。
+
 ## 25.0
 
 **类型**：图像任务页额度与状态修复
