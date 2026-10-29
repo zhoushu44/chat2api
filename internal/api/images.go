@@ -40,15 +40,14 @@ func (h *ImagesHandler) Register(r *gin.RouterGroup) {
 	r.GET("/images/storage", h.Storage)
 	r.POST("/images/delete", h.Delete)
 	r.POST("/images/download", h.Download)
-	r.GET("/images/download/:path", h.DownloadOne)
 	r.GET("/images/tags", h.Tags)
 	r.POST("/images/tags", h.UpdateTags)
 	r.DELETE("/images/tags/:tag", h.DeleteTag)
-	r.GET("/images/:path", h.ServeImage)
+	r.GET("/images/download/*path", h.DownloadOne)
 }
 
 func (h *ImagesHandler) RegisterPublicImages(r *gin.RouterGroup) {
-	r.GET("/images/:path", h.ServeImage)
+	r.GET("/images/*path", h.ServeImage)
 }
 
 func (h *ImagesHandler) root() string { return filepath.Join(h.DataDir, "images") }
@@ -271,7 +270,9 @@ func (h *ImagesHandler) Download(c *gin.Context) {
 	}
 }
 
-func (h *ImagesHandler) DownloadOne(c *gin.Context) { h.downloadPath(c, c.Param("path")) }
+func (h *ImagesHandler) DownloadOne(c *gin.Context) {
+	h.downloadPath(c, strings.TrimPrefix(c.Param("path"), "/"))
+}
 
 func (h *ImagesHandler) downloadPath(c *gin.Context, rel string) {
 	path, err := h.fullPath(rel)
@@ -283,7 +284,7 @@ func (h *ImagesHandler) downloadPath(c *gin.Context, rel string) {
 }
 
 func (h *ImagesHandler) ServeImage(c *gin.Context) {
-	path, err := h.fullPath(c.Param("path"))
+	path, err := h.fullPath(strings.TrimPrefix(c.Param("path"), "/"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

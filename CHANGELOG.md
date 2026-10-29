@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.8
+
+**类型**：图片通配路由修正
+
+- 使用 `/v1/images/*path` 支持 `日期/文件名` 的真实图片访问。
+- 修正管理接口与图片下载通配路由注册冲突。
+
 ## 24.7
 
 **类型**：图片预览与日志展示修正
