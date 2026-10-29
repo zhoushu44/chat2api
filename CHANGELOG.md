@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.2
+
+**类型**：register total 语义修正
+
+- 显式 `total` 表示「本次注册 N 个」，不再按「补到账号池总数 N」计算；池内已有 41 个时输入 2 仍会注册 2 个。
+- 提取 `poolSize()` 统一账号池数量读取。
+
 ## 25.1
 
 **类型**：注册链路三处修复

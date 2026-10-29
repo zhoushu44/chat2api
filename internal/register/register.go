@@ -431,13 +431,14 @@ func (s *Service) Start() Config {
 	threads := s.cfg.Threads
 	target := total
 	plan := total
-	// 显式限额：total 大于 0 且调用方明确要注册 total 个时，不让 mode 的默认目标覆盖。
-	// 页面「数量」输入框写多少就注册多少，避免 available 模式固定 200。
-	explicitTotal := s.cfg.ExplicitTotal && total > 0
-	if explicitTotal {
+	// 显式数量：本次注册 total 个（不是「补到池子总数 total」）。
+	// 页面/接口写多少就注册多少，不受池子现有数量和 mode 默认目标影响。
+	if s.cfg.ExplicitTotal && total > 0 {
 		plan = total
 		target = total
-		mode = "total"
+		s.appendLogLocked(fmt.Sprintf("按指定数量注册 %d 个（当前账号池 %d）", plan, s.poolSize()), "yellow")
+		s.mu.Unlock()
+		return s.startTask(plan, threads, "total", target)
 	}
 	switch mode {
 	case "quota":
@@ -446,11 +447,8 @@ func (s *Service) Start() Config {
 	case "available":
 		plan = s.cfg.TargetAvailable
 		target = plan
-	default:		// total 模式：差额补齐
-		poolTotal := 0
-		if s.poolFunc != nil {
-			poolTotal = s.poolFunc()
-		}
+	default: // total 模式：差额补齐
+		poolTotal := s.poolSize()
 		plan = total - poolTotal
 		if plan <= 0 {
 			s.cfg.Enabled = false
@@ -465,6 +463,14 @@ func (s *Service) Start() Config {
 	}
 	s.mu.Unlock()
 	return s.startTask(plan, threads, mode, target)
+}
+
+// poolSize 账号池数量（poolFunc 未注入时返回 0）。
+func (s *Service) poolSize() int {
+	if s.poolFunc == nil {
+		return 0
+	}
+	return s.poolFunc()
 }
 
 func (s *Service) startTask(plan, threads int, mode string, target int) Config {
