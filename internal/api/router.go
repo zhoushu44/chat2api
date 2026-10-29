@@ -134,6 +134,8 @@ func (s *Server) NewRouter() *gin.Engine {
 	r.Use(s.cors())
 	r.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })
 	v1g := r.Group("/v1", s.auth())
+	// URL 模式（2K/4K）也落盘 JPG，需知道真实数据目录。
+	v1.SetImageDataDir(dataDir)
 	{
 		v1g.GET("/models", s.handleModels)
 		v1g.POST("/images/generations", s.handleImageGenerations)

@@ -66,10 +66,21 @@ func HandleGenerationsWith(c *gin.Context, orch *protocol.Orchestrator) {
 		return
 	}
 	data := make([]gin.H, 0, req.N)
+	// URL 模式：把已转码的 JPEG 落盘，返回本地 JPG 地址（2K/4K 同样保证 JPG）。
+	var savedPaths []string
+	if req.ResponseFormat == "url" && len(res.B64) > 0 {
+		raws := make([][]byte, 0, len(res.B64))
+		for _, b := range res.B64 {
+			raws = append(raws, []byte(b))
+		}
+		savedPaths = saveJPEGImages(raws, DataDir())
+	}
 	for i := 0; i < req.N; i++ {
 		item := gin.H{"revised_prompt": req.Prompt}
 		if req.ResponseFormat == "url" {
-			if i < len(res.URLs) {
+			if i < len(savedPaths) {
+				item["url"] = "/v1/images/" + savedPaths[i]
+			} else if i < len(res.URLs) {
 				item["url"] = res.URLs[i]
 			}
 		} else {

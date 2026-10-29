@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.5
+
+**类型**：2K/4K URL 模式统一输出 JPG
+
+- `response_format=url` 时把已转码的 JPEG 落盘到 `data/images/YYYYMMDD/`，返回 `/v1/images/<日期>/<文件>.jpg`。
+- 1K（b64）与 2K/4K（url）现在都是真正的 JPEG，不再返回上游 PNG/WebP 原始 URL。
+- 新增 `v1.SetImageDataDir`，由路由注入真实数据目录。
+
 ## 25.4
 
 **类型**：注册失败根因修复（warp 会话冷启动）
