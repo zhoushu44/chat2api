@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -60,5 +61,37 @@ func TestAuthPanelLoginStatus(t *testing.T) {
 	caps := resp["capabilities"].(map[string]any)
 	if caps["admin_console"] != true || caps["studio"] != true {
 		t.Fatalf("capabilities = %v", caps)
+	}
+}
+
+// 页面表单登录：{"password":...} 必须与 Bearer 主密钥走同一套鉴权。
+func TestAuthPanelPasswordFormLogin(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg, _ := config.Load("")
+	cfg.AuthKey = "secret"
+	srv := &Server{Cfg: cfg}
+	r := srv.NewRouter()
+
+	body := bytes.NewBufferString(`{"password":"secret"}`)
+	req, _ := http.NewRequest("POST", "/auth/login", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("password form login code=%d body=%s", w.Code, w.Body.String())
+	}
+	var resp map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["authenticated"] != true || resp["role"] != "admin" {
+		t.Fatalf("password form login view = %v", resp)
+	}
+
+	body = bytes.NewBufferString(`{"password":"wrong"}`)
+	req, _ = http.NewRequest("POST", "/auth/login", body)
+	req.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("wrong password form code=%d want 401", w.Code)
 	}
 }

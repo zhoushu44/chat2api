@@ -14,6 +14,15 @@ const panelAppVersion = "v2.7.0-go"
 // RegisterAuthPanel 注册面板登录接口（开放组，接口内部自行鉴权）。
 func RegisterAuthPanel(r *gin.RouterGroup, s *Server) {
 	r.POST("/auth/login", func(c *gin.Context) {
+		// 页面登录表单提交 {"password":"..."}；API 也允许 Bearer / X-Api-Key。
+		// 原实现只读 Header，导致配置正确的主密钥在页面上始终 401。
+		var form struct {
+			Password string `json:"password"`
+		}
+		_ = c.ShouldBindJSON(&form)
+		if form.Password != "" {
+			c.Request.Header.Set("Authorization", "Bearer "+form.Password)
+		}
 		id, name, role, ok := s.resolvePanelIdentity(c)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": gin.H{

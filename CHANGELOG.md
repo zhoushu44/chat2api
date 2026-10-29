@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.4
+
+**类型**：面板登录修复
+
+- `/auth/login` 支持页面提交的 `{"password":"..."}`，与 Bearer / X-Api-Key 共用主密钥鉴权。
+- 修复配置正确的主密钥在页面上始终返回「密钥无效或已失效」的问题。
+- 新增密码表单登录与错误密钥拒绝测试。
+
 ## 24.3
 
 **类型**：注册服务与生图服务恢复链路打通
