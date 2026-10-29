@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.6
+
+**类型**：URL 模式 JPG 落盘目录修复
+
+- 修复 saveJPEGImages 落盘目录错位：此前存到 `<dataDir>/YYYYMMDD`，与读取根 `<dataDir>/images` 不一致，导致 URL 模式下载 404。
+- 现统一为 `<dataDir>/images/YYYYMMDD/<文件名>.jpg`，/v1/images/<日期>/<文件> 可直接下载。
+
 ## 25.5
 
 **类型**：2K/4K URL 模式统一输出 JPG

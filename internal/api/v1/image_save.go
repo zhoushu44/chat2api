@@ -27,9 +27,10 @@ func saveJPEGImages(datas [][]byte, baseDir string) []string {
 		return nil
 	}
 	if baseDir == "" {
-		baseDir = "data/images"
+		baseDir = "data"
 	}
-	dir := filepath.Join(baseDir, time.Now().Format("20060102"))
+	// 与 /api/images、/v1/images 读取根目录保持一致：<dataDir>/images/YYYYMMDD/
+	dir := filepath.Join(baseDir, "images", time.Now().Format("20060102"))
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil
 	}
