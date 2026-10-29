@@ -86,6 +86,9 @@ func (h *AccountsHandler) List(c *gin.Context) {
 			"token":                    a.Token,
 			"refresh_token":            a.RefreshToken,
 			"password":                 "", // 不暴露明文
+			"has_password":             a.Password != "",
+			"has_totp":                 a.TOTPSecret != "",
+			"recoverable":              a.Password != "" && a.TOTPSecret != "",
 			"has_refresh_token":        a.RefreshToken != "",
 			"refresh_token_status":     map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
 			"type":                     a.Type,

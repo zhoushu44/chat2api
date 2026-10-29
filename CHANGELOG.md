@@ -3,6 +3,15 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.3
+
+**类型**：注册服务与生图服务恢复链路打通
+
+- RegiForge 导出器逐账号透传 `password`、`totp_secret`、`session_token`，仅在非空时发送。
+- Go 账号模型、持久化和调度池保留恢复凭据，AT 失效后可执行密码 + TOTP 协议登录恢复。
+- 账号列表只返回 `has_password`、`has_totp`、`recoverable`，不回显密码/TOTP/session 明文。
+- 修正导出测试为当前单账号 POST 接口，并补充 Go 导入、持久化与脱敏测试。
+
 ## 24.2
 
 **类型**：生图根因修复 + 账号恢复/清理 + 面板分类

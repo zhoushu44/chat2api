@@ -2,12 +2,16 @@
 
 接口：POST {base_url}/api/accounts
 body: {"id": <email>, "token": <access_token>, "email": ..., "type": "free",
-       "source_type": "web", "status": "正常", "quota": -1, "quota_unknown": true}
+       "source_type": "web", "status": "正常", "quota": -1, "quota_unknown": true,
+       "password": <登录密码>, "totp_secret": <TOTP secret>,
+       "session_token": <NextAuth session token>}
 header: Authorization: Bearer {admin_password}（管理员密钥）
 
 注意：Go 重写版的 /api/accounts 只接受单个账号对象（不接受批量数组），
 token 字段名是 token（旧 Python 版为 access_token），故逐个提交。
 新号 quota 未知：quota=-1 + quota_unknown=true 使调度器视为可用。
+password/totp_secret 只在非空时透传，供 AT 失效后的协议登录恢复；
+它们是敏感凭据，不得写入本模块日志。
 """
 from __future__ import annotations
 
@@ -47,6 +51,12 @@ class ChatGPT2ApiExportProvider(ExportProvider):
                 "quota": -1,
                 "quota_unknown": True,
             }
+            # 恢复凭据：只在有值时透传；空值不发送，避免污染 payload。
+            # Go 端只用于协议登录恢复，列表/详情接口必须脱敏。
+            for key in ("password", "totp_secret", "session_token"):
+                value = extra.get(key)
+                if isinstance(value, str) and value.strip():
+                    entry[key] = value.strip()
             entries.append(entry)
             credentials.append(account.apikey)
         if not entries:
