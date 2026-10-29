@@ -610,6 +610,7 @@ const sizeMenuPosition = reactive({ top: 0, left: 0 })
 const previewImage = ref<{ src: string; name: string; localPath?: string } | null>(null)
 const quotaSummary = ref<ImageQuotaSummary | null>(null)
 const isQuotaLoading = ref(false)
+const quotaLoadFailed = ref(false)
 
 let pollTimer: number | null = null
 
@@ -682,7 +683,9 @@ const selectedSizeDetailLabel = computed(() => {
 const isHighRiskImageSize = computed(() => currentSizePreset.value?.resolution === '4K')
 
 const quotaFooterLabel = computed(() => {
-  if (!quotaSummary.value) return isQuotaLoading.value ? '额度读取中' : '额度读取失败'
+  if (isQuotaLoading.value && !quotaSummary.value) return '额度读取中'
+  if (quotaLoadFailed.value && !quotaSummary.value) return '额度读取失败'
+  if (!quotaSummary.value) return '暂无额度信息'
   const total = Math.max(0, Number(quotaSummary.value.total_quota || 0))
   const unlimited = Math.max(0, Number(quotaSummary.value.unlimited_quota_count || 0))
   const unknown = Math.max(0, Number(quotaSummary.value.unknown_quota_count || 0))
@@ -773,18 +776,22 @@ function resultPreviewStyle(size: string) {
 async function loadQuotaSummary() {
   if (isQuotaLoading.value) return
   isQuotaLoading.value = true
+  quotaLoadFailed.value = false
   try {
     quotaSummary.value = await imageTasksApi.quota()
   } catch (error) {
     console.error('[image-tasks] quota load failed', error)
-    quotaSummary.value = null
+    quotaLoadFailed.value = true
   } finally {
     isQuotaLoading.value = false
   }
 }
 
 function applyQuotaSummary(summary: ImageQuotaSummary | undefined) {
-  if (summary) quotaSummary.value = summary
+  if (summary) {
+    quotaSummary.value = summary
+    quotaLoadFailed.value = false
+  }
 }
 
 function updateSizeMenuPosition() {

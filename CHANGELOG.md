@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.0
+
+**类型**：图像任务页额度与状态修复
+
+- 只有额度接口真正失败时才显示「额度读取失败」；未知额度正常显示为「未知额度账号 N 个」，不再误报失败。
+- 任务创建/查询补齐 mode、model、size、quality、n、elapsed_secs 字段，前端可正确跟踪状态。
+- 轮询使用创建时保存的模型与数量，不再固定回退为 gpt-image-2 / n=1。
+
 ## 24.9
 
 **类型**：生图输出统一 JPG

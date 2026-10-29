@@ -25,6 +25,10 @@ type ImageTasksHandler struct {
 	mu       sync.Mutex
 	modes    map[string]string
 	prompts  map[string]string
+	models   map[string]string
+	sizes    map[string]string
+	quality  map[string]string
+	counts   map[string]int
 }
 
 func (h *ImageTasksHandler) Register(r *gin.RouterGroup) {
@@ -40,6 +44,10 @@ func (h *ImageTasksHandler) init() {
 	if h.modes == nil {
 		h.modes = map[string]string{}
 		h.prompts = map[string]string{}
+		h.models = map[string]string{}
+		h.sizes = map[string]string{}
+		h.quality = map[string]string{}
+		h.counts = map[string]int{}
 	}
 	h.mu.Unlock()
 }
@@ -61,7 +69,7 @@ func (h *ImageTasksHandler) List(c *gin.Context) {
 		if len(ids) > 0 && !ids[t.ID] {
 			continue
 		}
-		items = append(items, taskView(t))
+		items = append(items, h.taskView(t))
 		delete(ids, t.ID)
 	}
 	for id := range ids {
@@ -70,10 +78,27 @@ func (h *ImageTasksHandler) List(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items, "missing_ids": missing})
 }
 
-func taskView(t *task.Task) gin.H {
+func (h *ImageTasksHandler) taskView(t *task.Task) gin.H {
 	out := gin.H{
 		"id": t.ID, "status": t.Status, "created_at": t.CreatedAt, "updated_at": t.UpdatedAt,
 		"can_resume_poll": t.CanResume, "error": t.Error,
+		"elapsed_secs": int64(time.Since(t.CreatedAt).Seconds()),
+	}
+	h.mu.Lock()
+	out["mode"] = h.modes[t.ID]
+	out["model"] = h.models[t.ID]
+	out["size"] = h.sizes[t.ID]
+	out["quality"] = h.quality[t.ID]
+	out["n"] = h.counts[t.ID]
+	h.mu.Unlock()
+	if out["model"] == "" {
+		out["model"] = "gpt-image-2"
+	}
+	if out["mode"] == "" {
+		out["mode"] = "generate"
+	}
+	if out["n"] == 0 || out["n"] == nil {
+		out["n"] = 1
 	}
 	if t.Result != nil {
 		out["data"] = t.Result
@@ -144,12 +169,16 @@ func (h *ImageTasksHandler) CreateGeneration(c *gin.Context) {
 	h.mu.Lock()
 	h.modes[req.ClientTaskID] = "generate"
 	h.prompts[req.ClientTaskID] = req.Prompt
+	h.models[req.ClientTaskID] = req.Model
+	h.sizes[req.ClientTaskID] = req.Size
+	h.quality[req.ClientTaskID] = req.Quality
+	h.counts[req.ClientTaskID] = req.N
 	h.mu.Unlock()
 	t := h.Tasks.Create(req.ClientTaskID)
 	go h.runGeneration(t.ID, protocol.GenerateRequest{
 		Prompt: protocol.BuildImagePrompt(req.Prompt, req.Size, req.Quality), Model: req.Model, N: req.N,
 	})
-	c.JSON(http.StatusAccepted, taskView(t))
+	c.JSON(http.StatusAccepted, h.taskView(t))
 }
 
 func (h *ImageTasksHandler) CreateEdit(c *gin.Context) {
@@ -182,12 +211,16 @@ func (h *ImageTasksHandler) CreateEdit(c *gin.Context) {
 	h.mu.Lock()
 	h.modes[id] = "edit"
 	h.prompts[id] = prompt
+	h.models[id] = model
+	h.sizes[id] = size
+	h.quality[id] = quality
+	h.counts[id] = n
 	h.mu.Unlock()
 	t := h.Tasks.Create(id)
 	go h.runGeneration(t.ID, protocol.GenerateRequest{
 		Prompt: protocol.BuildImagePrompt(prompt, size, quality), Model: model, Images: images, N: n,
 	})
-	c.JSON(http.StatusAccepted, taskView(t))
+	c.JSON(http.StatusAccepted, h.taskView(t))
 }
 
 func (h *ImageTasksHandler) runGeneration(id string, req protocol.GenerateRequest) {
@@ -230,10 +263,16 @@ func (h *ImageTasksHandler) ResumePoll(c *gin.Context) {
 	}
 	h.init()
 	h.mu.Lock()
-	req := protocol.GenerateRequest{Prompt: h.prompts[id], Model: "gpt-image-2", N: 1}
+	req := protocol.GenerateRequest{Prompt: h.prompts[id], Model: h.models[id], N: h.counts[id]}
+	if req.Model == "" {
+		req.Model = "gpt-image-2"
+	}
+	if req.N <= 0 {
+		req.N = 1
+	}
 	h.mu.Unlock()
 	t.Status = task.Running
 	t.UpdatedAt = time.Now()
 	go h.runGeneration(id, req)
-	c.JSON(http.StatusAccepted, taskView(t))
+	c.JSON(http.StatusAccepted, h.taskView(t))
 }
