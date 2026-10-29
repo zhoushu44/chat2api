@@ -50,6 +50,11 @@ type Account struct {
 	PendingAuthScope bool              `json:"pending_auth_scope"`
 	RefreshToken     string            `json:"refresh_token"`
 	TokenExpireAt    int64             `json:"token_expire_at"`
+	// 协议登录恢复凭据（需求 B）：注册产出透传的密码与 TOTP secret。
+	// 列表/详情接口不回显明文（has_password/has_totp/recoverable 布尔代替）。
+	Password         string            `json:"password,omitempty"`
+	SessionToken     string            `json:"session_token,omitempty"`
+	TOTPSecret       string            `json:"totp_secret,omitempty"`
 	PlanType         string            `json:"plan_type"`
 	FP               map[string]string `json:"fp"`
 	LifecycleStatus string            `json:"lifecycle_status"`
@@ -149,6 +154,9 @@ func mergeAccountLocked(dst, src *Account) {
 	dst.PendingAuthScope = src.PendingAuthScope
 	dst.RefreshToken = src.RefreshToken
 	dst.TokenExpireAt = src.TokenExpireAt
+	dst.Password = src.Password
+	dst.SessionToken = src.SessionToken
+	dst.TOTPSecret = src.TOTPSecret
 	dst.PlanType = src.PlanType
 	dst.FP = src.FP
 	dst.LifecycleStatus = src.LifecycleStatus

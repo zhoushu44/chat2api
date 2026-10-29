@@ -246,6 +246,73 @@ func TestRefreshAllRevivesDisabled(t *testing.T) {
 	}
 }
 
+// TR9：待重登账号探测成功也应复活——每日重登识别前的账号不得永久被排除。
+func TestRefreshAllRevivesNeedRelogin(t *testing.T) {
+	dir := t.TempDir()
+	svc := newTestService(dir,
+		func(ctx context.Context, a *account.Account) (backend.AccountQuota, error) {
+			return backend.AccountQuota{OK: true, Quota: 12, PlanType: "Plus"}, nil
+		},
+		&account.Account{ID: "relogin-1", Token: "tok-relogin", Email: "relogin@a.com", Status: account.StatusNeedRelogin},
+	)
+
+	id, err := svc.RefreshAll(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("RefreshAll: %v", err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := GetProgress(id); p != nil && p.Done {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	for _, a := range svc.Pool.List() {
+		if a.Token == "tok-relogin" {
+			if a.Status != account.StatusNormal {
+				t.Fatalf("status = %s want normal", a.Status)
+			}
+			if a.Quota != 12 || a.PlanType != "Plus" {
+				t.Fatalf("quota/plan = %d/%s want 12/Plus", a.Quota, a.PlanType)
+			}
+		}
+	}
+	if svc.Pool.Pick(account.Selector{}) == nil {
+		t.Fatal("待重登账号探测复活后应可被调度")
+	}
+	persisted, ok := account.New(dir).Get("relogin-1")
+	if !ok || persisted.Status != account.StatusNormal {
+		t.Fatalf("persisted = %+v, ok=%v want normal", persisted, ok)
+	}
+}
+
+// TR10：待重登账号探测失败仍保留待重登，不误判真死号。
+func TestRefreshAllKeepsNeedReloginOnProbeError(t *testing.T) {
+	svc := newTestService(t.TempDir(),
+		func(ctx context.Context, a *account.Account) (backend.AccountQuota, error) {
+			return backend.AccountQuota{}, errors.New("upstream timeout")
+		},
+		&account.Account{Token: "tok-relogin-bad", Email: "relogin-bad@a.com", Status: account.StatusNeedRelogin},
+	)
+	id, _ := svc.RefreshAll(context.Background(), nil)
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p := GetProgress(id); p != nil && p.Done {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	for _, a := range svc.Pool.List() {
+		if a.Token == "tok-relogin-bad" && a.Status != account.StatusNeedRelogin {
+			t.Fatalf("status = %s want 待重登（探测失败不得误判真死号）", a.Status)
+		}
+	}
+	if svc.Pool.Pick(account.Selector{}) != nil {
+		t.Fatal("待重登账号探测失败不应被调度")
+	}
+}
+
 // TR8：探测失败的失效号保持失效（不会被误复活，也不丢状态）。
 func TestRefreshAllKeepsDisabledOnProbeError(t *testing.T) {
 	dir := t.TempDir()

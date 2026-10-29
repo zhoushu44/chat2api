@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"chatgpt2api/internal/account"
+	"chatgpt2api/internal/account/oauth"
 	"chatgpt2api/internal/api"
 	"chatgpt2api/internal/autotune"
 	"chatgpt2api/internal/backend"
@@ -88,8 +90,27 @@ func main() {
 		}
 		return a.Token, true // token 未变，但账号已证明存活
 	}
+	// Recover 钩子 = 密码+TOTP 协议登录恢复（22.0 恢复，每日 03:00 群验时使用）。
+	// 与 Relogin 的区别：Relogin 是「探测能通就复活」，Recover 是「用密码+TOTP
+	// 真正重新登录拿新 AT」。优先级：有密码+TOTP 的账号先走 Recover。
+	sched.RecoveryEnabled = true
+	sched.Recover = func(a *account.Account) (newToken, newSession string, err error) {
+		if a.Password == "" || a.TOTPSecret == "" {
+			return "", "", fmt.Errorf("缺少密码或 TOTP secret，无法协议恢复")
+		}
+		result, err := oauth.LoginWithPassword(a.Email, a.Password, a.TOTPSecret, cfg.EffectiveProxy(), func(msg string) {
+			log.Printf("[recover] %s: %s", a.Email, msg)
+		})
+		if err != nil {
+			return "", "", err
+		}
+		return result.AccessToken, result.SessionToken, nil
+	}
 	sched.Start()
 	defer sched.Stop()
+	// 注入路由：账号页「每日验活/协议恢复」开关与自动清理共用同一个调度器实例。
+	srv.Scheduler = sched
+	sched.SetAutoRemoveInvalid(cfg.AutoRemoveInvalidAccounts)
 
 	// 启动额度周期同步（21.0 refresh.go 的 RunPeriodic）。
 	// 定期探测所有账号的图片额度，能通就复活「失效」和「待重登」账号——

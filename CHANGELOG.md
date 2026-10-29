@@ -3,6 +3,26 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 24.2
+
+**类型**：生图根因修复 + 账号恢复/清理 + 面板分类
+
+- **生图根因修复**
+  - 参考图 ID 贯穿轮询和 URL 解析全程排除，避免失效账号把用户参考图当作生成结果返回
+  - 排除参考图后无新图时报 `no_image_generated`，不再静默成功
+  - 有文本回复但无图片指针时判定 `upstream_text_reply`，不再吞成统一 `upstream_error`
+- **账号恢复与清理**
+  - 恢复 `refresh.go` 额度探测复活机制，失效/待重登账号探测成功自动回池
+  - 恢复密码 + TOTP 协议登录恢复链路（`oauth.LoginWithPassword`）
+  - 每日验活：优先协议恢复，其次额度探测；只有恢复失败才判真死号
+  - 实现 `/api/accounts/cleanup/preview` 与 `/api/accounts/cleanup/run`
+  - 「自动移除异常账号」开启后，仅删除确认真死号；正常、待重登、生图失效账号不删
+  - 账号页「每日验活」「协议恢复」开关接入 `/api/scheduler`
+- **面板与发布**
+  - 账号页新增「待重登」「生图失效」状态与筛选
+  - 前端嵌入不再写死 hash 文件名，重新构建不会导致 Go embed 失败
+  - 版本号统一为 `24.2`
+
 ## 24.1
 
 **类型**：源码对齐 + 部署修正（无新功能）

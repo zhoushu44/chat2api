@@ -295,6 +295,28 @@ function backendStatusToFrontend(item: BackendAccount): Pick<
     }
   }
 
+  // 待重登：access_token 失效但账号本身可能仍存活，等待协议恢复或额度探测复活
+  if (rawStatus === '待重登') {
+    return {
+      enabled: false,
+      status: 'disabled',
+      status_reason: 'token 失效，等待重新登录恢复',
+      status_reason_code: 'need_relogin',
+      last_error_kind: 'auth_invalid',
+    }
+  }
+
+  // 生图失效：可登录但不能出图（上游只回文本/额度/工具错误）
+  if (rawStatus === '生图失效') {
+    return {
+      enabled: false,
+      status: 'disabled',
+      status_reason: '可登录但无法生成图片',
+      status_reason_code: 'image_blocked',
+      last_error_kind: 'no_image_generated',
+    }
+  }
+
   if (rawStatus === STATUS_INVALID || rawStatus.toLowerCase() === 'invalid') {
     return {
       enabled: true,

@@ -1,4 +1,4 @@
-﻿import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { accountImportsApi, accountsApi, proxyApi } from '@/api'
 import { normalizeAccountBackendStatus } from '@/api/accounts'
 import { parseProxyReference, serializeProxyReference } from '@/api/proxy'
@@ -279,6 +279,8 @@ export function useAccountsPage() {
     { label: '受限', value: 'limited' },
     { label: '异常', value: 'abnormal' },
     { label: '禁用', value: 'disabled' },
+    { label: '待重登', value: 'need_relogin' },
+    { label: '生图失效', value: 'image_blocked' },
   ] as const
 
   const groupFilterOptions = computed(() => [

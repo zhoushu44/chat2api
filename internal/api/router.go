@@ -19,6 +19,8 @@ import (
 	"chatgpt2api/internal/prompt"
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/register"
+	"chatgpt2api/internal/scheduler"
+	"chatgpt2api/internal/settings"
 	"chatgpt2api/internal/task"
 	"chatgpt2api/internal/utils"
 
@@ -46,6 +48,8 @@ type Server struct {
 	Auth *auth.Service
 	// P2.6c 账号 watcher
 	Watcher *account.Watcher
+	// 每日验活/协议恢复调度器（由 main.go 注入，账号页开关与自动清理共用）
+	Scheduler *scheduler.Scheduler
 }
 
 // NewServer 按 config 组装完整服务树（P0.1）。
@@ -122,6 +126,10 @@ func (s *Server) Close() {
 
 func (s *Server) NewRouter() *gin.Engine {
 	r := gin.New()
+	dataDir := "./data"
+	if s.Cfg != nil && s.Cfg.DataDir != "" {
+		dataDir = s.Cfg.DataDir
+	}
 	r.Use(gin.Recovery())
 	r.Use(s.cors())
 	r.GET("/healthz", func(c *gin.Context) { c.Status(http.StatusOK) })
@@ -169,6 +177,10 @@ func (s *Server) NewRouter() *gin.Engine {
 	if s.Cfg != nil {
 		(&admin.SystemHandler{Cfg: s.Cfg, Catalog: s.Catalog}).Register(adminGroup)
 	}
+	// 每日验活与协议恢复开关（账号页）；默认值与 main.go 注入保持一致。
+	(&admin.SchedulerHandler{Sched: s.Scheduler, DataDir: dataDir, DefEnabled: s.Scheduler != nil && s.Scheduler.Enabled}).Register(adminGroup)
+	// 系统设置与「自动移除异常账号」热更新。
+	(&SettingsHandler{Store: settings.NewStore(dataDir), Sched: s.Scheduler}).Register(adminGroup)
 	if s.Tasks != nil {
 		RegisterImageTasks(adminGroup, s.Tasks)
 	}

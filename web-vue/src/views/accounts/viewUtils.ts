@@ -2,7 +2,7 @@ import type { Account, AccountLane } from '@/api/accounts'
 import { proxyReferenceLabel } from '@/api/proxy'
 
 export type QuotaKey = 'fast' | 'thinking' | 'pro' | 'image' | 'music' | 'video'
-export type AccountStatusFilter = 'all' | 'normal' | 'limited' | 'abnormal' | 'disabled'
+export type AccountStatusFilter = 'all' | 'normal' | 'limited' | 'abnormal' | 'disabled' | 'need_relogin' | 'image_blocked'
 
 export type QuotaLine = {
   used: number
@@ -326,7 +326,12 @@ export function statusText(item: Account): string {
     ? item.lane_backoff_summary.lanes.filter(Boolean)
     : []
 
-  if (!item.enabled || item.status === 'disabled') return '已禁用'
+  if (!item.enabled || item.status === 'disabled') {
+    // 细分禁用原因：待重登 / 生图失效 / 真禁用
+    if (reasonCode === 'need_relogin') return '待重登'
+    if (reasonCode === 'image_blocked') return '生图失效'
+    return '已禁用'
+  }
   if (item.status === 'incomplete') return '不完整'
   if (
     item.status === 'invalid' ||
@@ -362,6 +367,8 @@ export function statusText(item: Account): string {
 
 export function statusCategory(item: Account): Exclude<AccountStatusFilter, 'all'> {
   const text = statusText(item)
+  if (text === '待重登') return 'need_relogin'
+  if (text === '生图失效') return 'image_blocked'
   if (text === '已禁用') return 'disabled'
   if (text === '正常') return 'normal'
   if (text === '受限' || text.includes('避让')) return 'limited'
@@ -371,6 +378,8 @@ export function statusCategory(item: Account): Exclude<AccountStatusFilter, 'all
 export function statusClass(item: Account): string {
   const text = statusText(item)
   if (text === '正常') return PILL_TONE_CLASS.success
+  if (text === '待重登') return PILL_TONE_CLASS.warning
+  if (text === '生图失效') return PILL_TONE_CLASS.danger
   if (text === '受限' || text.includes('避让')) return PILL_TONE_CLASS.warning
   if (text === '异常') return PILL_TONE_CLASS.danger
   if (text === '不完整') return PILL_TONE_CLASS.info
@@ -406,6 +415,8 @@ export function statusRawError(item: Account): string {
 export function rowClass(item: Account): string {
   const category = statusCategory(item)
   if (category === 'disabled') return 'bg-muted/50'
+  if (category === 'need_relogin') return 'bg-amber-500/5'
+  if (category === 'image_blocked') return 'bg-rose-500/5'
   if (category === 'abnormal') return 'bg-rose-500/5'
   if (category === 'limited') return 'bg-amber-500/5'
   if (!item.access_token && !item.cookie) return 'bg-muted/30'

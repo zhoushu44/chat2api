@@ -9,8 +9,9 @@ import (
 )
 
 //go:embed web_dist
-// 目录模式会跳过 _ 开头文件，Vite 公共 chunk 必须显式嵌入，否则 SPA 按 index.html 回退导致 import 失败
-//go:embed web_dist/assets/_plugin-vue_export-helper-DlAUqK2U.js
+// 目录模式会跳过 _ 开头文件，Vite 公共 chunk 通过显式目录嵌入覆盖；
+// 不把 hash 文件名写死，避免前端重新构建后 Go embed 失效。
+//go:embed web_dist/assets
 var embeddedFS embed.FS
 
 // Static registers embedded FS with SPA fallback.

@@ -188,6 +188,8 @@ type Config struct {
 	Backup              BackupConfig              `json:"backup"`
 	ImageGeneration     ImageGenerationConfig     `json:"image_generation"`
 	QuotaLimits         QuotaLimitsConfig         `json:"quota_limits"`
+	// 自动移除异常账号：确认真死号后从持久化删除；默认关闭，避免误清。
+	AutoRemoveInvalidAccounts bool `json:"auto_remove_invalid_accounts"`
 }
 
 func defaults() *Config {

@@ -22,6 +22,8 @@ func (h *AccountsHandler) Register(r *gin.RouterGroup) {
 	r.DELETE("/accounts/:id", h.Delete)
 	r.GET("/accounts/stats", h.Stats)
 	r.POST("/accounts/check", h.Check)
+	r.POST("/accounts/cleanup/preview", h.PreviewCleanup)
+	r.POST("/accounts/cleanup/run", h.RunCleanup)
 }
 
 func (h *AccountsHandler) List(c *gin.Context) {
