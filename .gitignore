@@ -197,3 +197,5 @@ build_env.txt
 /idx_*.js
 /settings_chunk*.js
 /*.bak*
+
+artifacts/
