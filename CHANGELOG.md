@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.7
+
+**类型**：URL 模式 JPG 内容修复
+
+- 修复 `saveJPEGImages` 直接把 `res.B64`（base64 字节）当二进制写入，导致下载到的是 `/9j/...` 文本、扩展名是 .jpg 但内容不是图片。
+- 落盘前先 base64 解码，写出真正 JPEG 二进制。
+- 新增 `TestSaveJPEGImagesDecodesBase64` 防回归。
+
 ## 25.6
 
 **类型**：URL 模式 JPG 落盘目录修复

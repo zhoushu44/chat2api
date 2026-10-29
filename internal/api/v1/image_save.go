@@ -1,6 +1,7 @@
 package v1
 
 import (
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"time"
@@ -40,8 +41,14 @@ func saveJPEGImages(datas [][]byte, baseDir string) []string {
 		if len(data) == 0 {
 			continue
 		}
+		// res.B64 存的是 base64 编码后的字节，落盘前必须解码，
+		// 否则写出的是 "/9j/..." 这样的文本，扩展名是 .jpg 但内容不是图片。
+		raw := data
+		if decoded, err := base64.StdEncoding.DecodeString(string(data)); err == nil && len(decoded) > 0 {
+			raw = decoded
+		}
 		name := stamp + "_" + itoa(i) + ".jpg"
-		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(dir, name), raw, 0644); err != nil {
 			continue
 		}
 		out = append(out, time.Now().Format("20060102")+"/"+name)
