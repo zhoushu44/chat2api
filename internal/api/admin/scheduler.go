@@ -19,6 +19,21 @@ type SchedulerHandler struct {
 func (h *SchedulerHandler) Register(r *gin.RouterGroup) {
 	r.GET("/scheduler", h.Get)
 	r.PUT("/scheduler", h.Set)
+	// 手动触发一次全量验活 + 协议恢复（异步执行，立即返回处理的账号数）。
+	r.POST("/scheduler/run", h.Run)
+}
+
+func (h *SchedulerHandler) Run(c *gin.Context) {
+	if h.Sched == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "scheduler not configured"})
+		return
+	}
+	total, removed := h.Sched.RunNow()
+	if removed < 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "scheduler 未就绪（缺少池或验活函数）"})
+		return
+	}
+	c.JSON(http.StatusAccepted, gin.H{"started": true, "accounts": total})
 }
 
 func (h *SchedulerHandler) Get(c *gin.Context) {

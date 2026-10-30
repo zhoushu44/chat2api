@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.1
+
+**类型**：手动触发验活 + 协议恢复
+
+- 新增 `POST /api/scheduler/run`：立即对全量账号跑一次验活 + 协议恢复（异步，返回处理账号数）。
+- 复用每日定时任务同一逻辑（`doDaily401`），不影响 `lastDailyDate`，可随时手动补跑。
+
 ## 26.0
 
 **类型**：首页新增「账号产出与存活」区块

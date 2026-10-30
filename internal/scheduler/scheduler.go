@@ -151,6 +151,22 @@ func (s *Scheduler) SetAutoRemoveInvalid(v bool) {
 	log.Printf("[Scheduler] 自动移除不可恢复账号：%v", v)
 }
 
+// RunNow 手动触发一次全量验活 + 协议恢复（管理员接口调用）。
+// 与每日定时任务走同一逻辑，但不影响 lastDailyDate。
+// 返回：处理账号数、真死号数。异步执行，避免请求超时。
+func (s *Scheduler) RunNow() (int, int) {
+	if s.Pool == nil || s.CheckValid == nil {
+		return 0, -1
+	}
+	total := len(s.Pool.List())
+	log.Printf("[Scheduler] 手动触发验活+协议恢复，账号数 %d", total)
+	go func() {
+		removed := s.doDaily401()
+		log.Printf("[Scheduler] 手动验活完成：处理 %d，真死号 %d", total, removed)
+	}()
+	return total, 0
+}
+
 func (s *Scheduler) checkDaily() {
 	if !s.Enabled {
 		return
