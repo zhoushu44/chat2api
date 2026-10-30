@@ -107,11 +107,20 @@ func main() {
 	// 与 Relogin 的区别：Relogin 是「探测能通就复活」，Recover 是「用密码+TOTP
 	// 真正重新登录拿新 AT」。优先级：有密码+TOTP 的账号先走 Recover。
 	sched.RecoveryEnabled = true
+	// 协议恢复每次重试都换一个出口：同一 IP 连续多次密码登录极易被判盗号，
+	// 而注册时每个号用的是独立 warp 会话出口，恢复也应保持同样策略。
 	sched.Recover = func(a *account.Account) (newToken, newSession string, err error) {
 		if a.Password == "" || a.TOTPSecret == "" {
 			return "", "", fmt.Errorf("缺少密码或 TOTP secret，无法协议恢复")
 		}
-		result, err := oauth.LoginWithPassword(a.Email, a.Password, a.TOTPSecret, cfg.EffectiveProxy(), func(msg string) {
+		proxy := cfg.EffectiveProxy()
+		if srv.Egress != nil {
+			// 优先跟随账号固定出口（与注册/生图保持一致，避免 IP 漂移）
+			if p := srv.Egress.ProxyFor(a.ID); p != "" {
+				proxy = p
+			}
+		}
+		result, err := oauth.LoginWithPassword(a.Email, a.Password, a.TOTPSecret, proxy, func(msg string) {
 			log.Printf("[recover] %s: %s", a.Email, msg)
 		})
 		if err != nil {

@@ -3,6 +3,14 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.5
+
+**类型**：协议恢复改用账号固定出口
+
+- 此前 `sched.Recover` 固定用全局 `EffectiveProxy()`，同一 IP 连续 3 次密码登录，极易被上游判盗号（实测返回 `invalid_username_or_password`）。
+- 现在恢复优先使用该账号的固定 warp 出口（`Egress.ProxyFor`），与注册/生图保持同一出口身份。
+- 实测背景：678 个有密码+TOTP 的账号中 296 个曾成功生图（账号与密码真实有效），但 `revive_count` 全为 0——从未有一个号被恢复救活，符合「同 IP 重复登录被拒」的判断。
+
 ## 26.4
 
 **类型**：对齐开源实践——账号预热 / 入池校验 / 背压排队
