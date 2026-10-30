@@ -193,11 +193,11 @@ func (o *Orchestrator) Generate(ctx context.Context, req GenerateRequest) (*Gene
 		req.N = 4
 	}
 	policy := backend.PollPolicy{
-		InitialWait: 300 * time.Millisecond,
-		Interval:    time.Second,
-		MaxInterval: 5 * time.Second,
-		Timeout:     60 * time.Second,
-		Settle:      time.Second,
+		InitialWait:   300 * time.Millisecond,
+		Interval:      time.Second,
+		MaxInterval:   5 * time.Second,
+		Timeout:       60 * time.Second,
+		Settle:        time.Second,
 		StreamTimeout: 80 * time.Second,
 	}
 	// 内容审查前置（请求级一次即可，不占用账号）
@@ -206,6 +206,7 @@ func (o *Orchestrator) Generate(ctx context.Context, req GenerateRequest) (*Gene
 	}
 	// 多图：每 slot 独立走一次完整单图链路（对等 Python 并行/串行模式）。
 	// 并发度按号池深度封顶：单号退化为串行（零行为变化），多号自动并行。
+	// 单账号并发上限由 Pool.Pick 的 MaxInflight(=Account.Concurrency) 独立保证。
 	// 顺序按 slot 组装（handler 按下标取图），与串行一致。
 	limit := len(o.Pool.List())
 	if limit < 1 {
@@ -262,6 +263,10 @@ func (o *Orchestrator) Generate(ctx context.Context, req GenerateRequest) (*Gene
 	return &GenerateResult{URLs: urls, B64: b64Data, Timing: timing}, nil
 }
 
+// noAccountBackpressure 号池被占满时，单次请求最多等待多久再判失败。
+// 开源同类项目的常见做法：用队列/等待吸收瞬时并发，而不是立刻 503。
+const noAccountBackpressure = 8 * time.Second
+
 // generateSingle 单张图片完整链路：多账号重试 + URL resolve + b64 下载。
 func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, policy backend.PollPolicy) (*GenerateResult, error) {
 	var lastErr error
@@ -276,7 +281,24 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		acc := o.Pool.Pick(sel)
 		pickMs := time.Since(pickStart).Milliseconds()
 		if acc == nil {
-			break
+			// 背压排队：号池里还有号但都被占用时，短暂等待释放再重试，
+			// 避免瞬时并发峰值直接返回 503 no_available_account。
+			// 池子本身为空则立即失败（等待没有意义）。
+			if len(o.Pool.List()) > 0 {
+				deadline := time.Now().Add(noAccountBackpressure)
+				for acc == nil && time.Now().Before(deadline) {
+					select {
+					case <-ctx.Done():
+						return nil, ctx.Err()
+					case <-time.After(120 * time.Millisecond):
+					}
+					acc = o.Pool.Pick(sel)
+				}
+				pickMs = time.Since(pickStart).Milliseconds()
+			}
+			if acc == nil {
+				break
+			}
 		}
 		be, err := o.getBackend(acc)
 		if err != nil {

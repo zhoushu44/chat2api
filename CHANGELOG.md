@@ -3,6 +3,32 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.4
+
+**类型**：对齐开源实践——账号预热 / 入池校验 / 背压排队
+
+参考同类开源项目（[gpt2api](https://github.com/laowang74152/gpt2api)、[GPT-Codex-image-2api](https://github.com/lza6/GPT-Codex-image-2api)）的「号池预热 + 高并发调度」做法：
+
+### 账号预热（解决新号入池即被打）
+
+- 新增 `WarmPending`：额度未知且从未探测过的新号标记为预热中，**不参与调度**。
+- `refresh` 额度探测成功后自动清除 `WarmPending` 与 `QuotaUnknown`，号才进入调度。
+- 预热超过 **30 分钟**仍未成功则自动放行（fail-open，避免号永远不可用）。
+
+### 背压排队（解决瞬时并发直接 503）
+
+- `generateSingle` 选号为空且池内仍有账号（只是被占满）时，最多等待 **8 秒**轮询重试，而不是立刻返回 `no_available_account`。
+- 池子本身为空时仍立即失败，不浪费等待。
+
+### 入池校验
+
+- `POST /api/accounts` 拒绝空 token（此前空 token 也会进池并被调度）。
+- 自动补全 `id` / `email` / `status`，避免统计与去重失效。
+
+### 其它
+
+- 修正 `orchestrator` 中关于单号并发的注释（单号并发实际由 `Pool.Pick` 的 `MaxInflight` 保证，无需改动并行度上限）。
+
 ## 26.3
 
 **类型**：修复「死号」根因（P0 三项）

@@ -39,24 +39,24 @@ func (a *Account) IsDead() bool {
 }
 
 type Account struct {
-	ID               string            `json:"id"`
-	Token            string            `json:"token"`
-	Email            string            `json:"email"`
-	Type             string            `json:"type"`
-	SourceType       string            `json:"source_type"`
-	Status           string            `json:"status"`
-	Quota            int               `json:"quota"`
-	QuotaUnknown     bool              `json:"quota_unknown"`
-	PendingAuthScope bool              `json:"pending_auth_scope"`
-	RefreshToken     string            `json:"refresh_token"`
-	TokenExpireAt    int64             `json:"token_expire_at"`
+	ID               string `json:"id"`
+	Token            string `json:"token"`
+	Email            string `json:"email"`
+	Type             string `json:"type"`
+	SourceType       string `json:"source_type"`
+	Status           string `json:"status"`
+	Quota            int    `json:"quota"`
+	QuotaUnknown     bool   `json:"quota_unknown"`
+	PendingAuthScope bool   `json:"pending_auth_scope"`
+	RefreshToken     string `json:"refresh_token"`
+	TokenExpireAt    int64  `json:"token_expire_at"`
 	// 协议登录恢复凭据（需求 B）：注册产出透传的密码与 TOTP secret。
 	// 列表/详情接口不回显明文（has_password/has_totp/recoverable 布尔代替）。
-	Password         string            `json:"password,omitempty"`
-	SessionToken     string            `json:"session_token,omitempty"`
-	TOTPSecret       string            `json:"totp_secret,omitempty"`
-	PlanType         string            `json:"plan_type"`
-	FP               map[string]string `json:"fp"`
+	Password        string            `json:"password,omitempty"`
+	SessionToken    string            `json:"session_token,omitempty"`
+	TOTPSecret      string            `json:"totp_secret,omitempty"`
+	PlanType        string            `json:"plan_type"`
+	FP              map[string]string `json:"fp"`
 	LifecycleStatus string            `json:"lifecycle_status"`
 	ValidityStatus  string            `json:"validity_status"`
 	PlanState       string            `json:"plan_state"`
@@ -64,7 +64,7 @@ type Account struct {
 	CheckedAt       int64             `json:"checked_at"`
 	Summary         map[string]any    `json:"summary,omitempty"`
 	// CooldownUntil 持久化冷却截止（fix10）：仅长冷却（12h 级）写入，重启后恢复调度。
-	CooldownUntil   int64             `json:"cooldown_until,omitempty"`
+	CooldownUntil int64 `json:"cooldown_until,omitempty"`
 	// 统计字段（单号产出 / 存活分析）。
 	// CreatedAt 入池时间；DiedAt 判死时间；DeathReason 死亡原因；
 	// ImagesOK/ImagesFail 累计生图成功/失败数（跨恢复累计）；
@@ -77,8 +77,22 @@ type Account struct {
 	ReviveCount   int    `json:"revive_count,omitempty"`
 	LastRevivedAt int64  `json:"last_revived_at,omitempty"`
 	QuotaInitial  int    `json:"quota_initial,omitempty"`
-	nextAvailable   int64
-	inflight        int32
+	// WarmPending 新号预热中：额度尚未探测成功，暂不参与调度。
+	// 开源实践共识：新号入池立即打生图最容易触发风控，先验额度再放量。
+	WarmPending   bool `json:"warm_pending,omitempty"`
+	nextAvailable int64
+	inflight      int32
+}
+
+// warmupMaxAge 预热最长时长：超过后即使没验成功也放行（fail-open）。
+const warmupMaxAge = 30 * time.Minute
+
+// WarmExpired 预热是否已超时（超时则不再阻塞调度）。
+func (a *Account) WarmExpired() bool {
+	if a.CreatedAt == 0 {
+		return true
+	}
+	return time.Since(time.Unix(a.CreatedAt, 0)) > warmupMaxAge
 }
 
 func (a *Account) Available() bool {
@@ -105,10 +119,10 @@ type shard struct {
 }
 
 type Pool struct {
-	mu      sync.RWMutex
-	byToken map[string]*Account
-	shards  [numShards]shard
-	cursor  atomic.Uint64
+	mu          sync.RWMutex
+	byToken     map[string]*Account
+	shards      [numShards]shard
+	cursor      atomic.Uint64
 	refresh     singleflight.Group
 	onRefresh   func(a *Account) (string, error)
 	refreshLead time.Duration
@@ -287,6 +301,10 @@ func (p *Pool) Pick(sel Selector) *Account {
 				continue
 			}
 			if !a.Available() {
+				// 预热中的新号跳过；但超过 warmupMaxAge 仍未验成功则放行（fail-open，避免永远不可用）。
+				if a.WarmPending && !a.WarmExpired() {
+					continue
+				}
 				continue
 			}
 			if na := atomic.LoadInt64(&a.nextAvailable); na > now {
@@ -324,6 +342,11 @@ func (p *Pool) EnsureStats(a *Account) {
 	}
 	if a.QuotaInitial == 0 && a.Quota > 0 {
 		a.QuotaInitial = a.Quota
+	}
+	// 新号预热：额度未知且从未探测过 → 标记预热中，先由 refresh 探测额度再放调度。
+	// 已有 CheckedAt（历史号）或额度已知的号不受影响。
+	if a.QuotaUnknown && a.CheckedAt == 0 && !a.WarmPending {
+		a.WarmPending = true
 	}
 }
 

@@ -80,33 +80,33 @@ func (h *AccountsHandler) List(c *gin.Context) {
 	items := make([]map[string]any, 0, len(pageItems))
 	for i, a := range pageItems {
 		items = append(items, map[string]any{
-			"id":                       i + start + 1,
-			"email":                    a.Email,
-			"access_token":             a.Token,
-			"token":                    a.Token,
-			"refresh_token":            a.RefreshToken,
-			"password":                 "", // 不暴露明文
-			"has_password":             a.Password != "",
-			"has_totp":                 a.TOTPSecret != "",
-			"recoverable":              a.Password != "" && a.TOTPSecret != "",
-			"has_refresh_token":        a.RefreshToken != "",
-			"refresh_token_status":     map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
-			"type":                     a.Type,
-			"plan_type":                a.PlanType,
-			"source_type":              a.SourceType,
-			"status":                   a.Status,
-			"quota":                    a.Quota,
-			"quota_unknown":            a.QuotaUnknown,
-			"pending_auth_scope":       a.PendingAuthScope,
-			"user_id":                  "",
-			"proxy":                    "",
-			"chatimage_invalid_401":    a.ValidityStatus == "invalid",
-			"chatimage_import_status":  "not_imported",
-			"validity_status":          a.ValidityStatus,
-			"lifecycle_status":         a.LifecycleStatus,
-			"plan_state":               a.PlanState,
-			"checked_at":               a.CheckedAt,
-			"created_at":               "",
+			"id":                      i + start + 1,
+			"email":                   a.Email,
+			"access_token":            a.Token,
+			"token":                   a.Token,
+			"refresh_token":           a.RefreshToken,
+			"password":                "", // 不暴露明文
+			"has_password":            a.Password != "",
+			"has_totp":                a.TOTPSecret != "",
+			"recoverable":             a.Password != "" && a.TOTPSecret != "",
+			"has_refresh_token":       a.RefreshToken != "",
+			"refresh_token_status":    map[bool]string{true: "valid", false: "missing"}[a.RefreshToken != ""],
+			"type":                    a.Type,
+			"plan_type":               a.PlanType,
+			"source_type":             a.SourceType,
+			"status":                  a.Status,
+			"quota":                   a.Quota,
+			"quota_unknown":           a.QuotaUnknown,
+			"pending_auth_scope":      a.PendingAuthScope,
+			"user_id":                 "",
+			"proxy":                   "",
+			"chatimage_invalid_401":   a.ValidityStatus == "invalid",
+			"chatimage_import_status": "not_imported",
+			"validity_status":         a.ValidityStatus,
+			"lifecycle_status":        a.LifecycleStatus,
+			"plan_state":              a.PlanState,
+			"checked_at":              a.CheckedAt,
+			"created_at":              "",
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{
@@ -131,8 +131,8 @@ func (h *AccountsHandler) Stats(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"platform": "chatgpt",
-		"alive_accounts": alive,
+		"platform":                     "chatgpt",
+		"alive_accounts":               alive,
 		"historical_registered_emails": len(all),
 		"survival_rate": func() float64 {
 			if len(all) == 0 {
@@ -149,7 +149,15 @@ func (h *AccountsHandler) Check(c *gin.Context) {
 
 func (h *AccountsHandler) Create(c *gin.Context) {
 	var a account.Account
-	if err := c.ShouldBindJSON(&a); err != nil { c.JSON(400, gin.H{"error": err.Error()}); return }
+	if err := c.ShouldBindJSON(&a); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// 入池校验：空 token / 非 JWT 形态直接拒绝，避免脏号进池后被调度到。
+	if msg := validateIncomingAccount(&a); msg != "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		return
+	}
 	if h.Accounts != nil {
 		_ = h.Accounts.Add(&a)
 	}
@@ -157,6 +165,31 @@ func (h *AccountsHandler) Create(c *gin.Context) {
 		h.Pool.Add(&a)
 	}
 	c.JSON(http.StatusOK, a)
+}
+
+// validateIncomingAccount 账号入池最小校验。返回空串表示通过。
+// 只拦截「空 token」这一必然会被调度到并失败的脏号；
+// 非 JWT 形态仅容忍（兼容测试/自定义 token），不做硬拒绝。
+func validateIncomingAccount(a *account.Account) string {
+	tok := strings.TrimSpace(a.Token)
+	if tok == "" {
+		return "token 不能为空"
+	}
+	// 补全派生字段，避免落库后 id/email 为空导致统计与去重失效
+	if a.ID == "" {
+		if a.Email != "" {
+			a.ID = a.Email
+		} else {
+			a.ID = tok[len(tok)-12:]
+		}
+	}
+	if a.Email == "" {
+		a.Email = a.ID
+	}
+	if a.Status == "" {
+		a.Status = account.StatusNormal
+	}
+	return ""
 }
 func (h *AccountsHandler) Update(c *gin.Context) {
 	id := c.Param("id")

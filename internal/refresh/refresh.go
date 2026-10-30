@@ -32,31 +32,31 @@ type Service struct {
 	// Concurrency 并发上限（<=0 时默认 8）。
 	Concurrency int
 
-	mu        sync.Mutex
+	mu         sync.Mutex
 	progresses map[string]*Progress
 }
 
 // Progress 一次刷新任务的进度快照（前端 AccountRefreshProgress 契约）。
 type Progress struct {
-	ID            string    `json:"-"`
-	Total         int       `json:"total"`
-	Processed     int       `json:"processed"`
-	Done          bool      `json:"done"`
-	Error         string    `json:"error,omitempty"`
-	StatusCounts  map[string]int `json:"status_counts,omitempty"`
-	TotalQuota    int       `json:"total_quota,omitempty"`
-	Refreshed     int       `json:"refreshed"`
-	Errors        []map[string]any `json:"errors,omitempty"`
-	Items         []map[string]any `json:"items,omitempty"`
-	StartedAt     time.Time `json:"-"`
+	ID           string           `json:"-"`
+	Total        int              `json:"total"`
+	Processed    int              `json:"processed"`
+	Done         bool             `json:"done"`
+	Error        string           `json:"error,omitempty"`
+	StatusCounts map[string]int   `json:"status_counts,omitempty"`
+	TotalQuota   int              `json:"total_quota,omitempty"`
+	Refreshed    int              `json:"refreshed"`
+	Errors       []map[string]any `json:"errors,omitempty"`
+	Items        []map[string]any `json:"items,omitempty"`
+	StartedAt    time.Time        `json:"-"`
 }
 
 // NewService 创建刷新服务。
 func NewService(accounts *account.Service, pool *account.Pool, proxy string) *Service {
 	return &Service{
-		Accounts:  accounts,
-		Pool:      pool,
-		Proxy:     proxy,
+		Accounts:   accounts,
+		Pool:       pool,
+		Proxy:      proxy,
 		progresses: make(map[string]*Progress),
 	}
 }
@@ -68,7 +68,7 @@ type progressEntry struct {
 }
 
 var (
-	regMu   sync.Mutex
+	regMu    sync.Mutex
 	registry = make(map[string]*progressEntry)
 )
 
@@ -103,9 +103,9 @@ func (s *Service) RefreshAll(ctx context.Context, tokens []string) (string, erro
 
 	id := uuid.NewString()[:8]
 	entry := &progressEntry{p: &Progress{
-		ID:        id,
-		Total:     len(targets),
-		StartedAt: time.Now(),
+		ID:           id,
+		Total:        len(targets),
+		StartedAt:    time.Now(),
 		StatusCounts: map[string]int{},
 	}}
 	regMu.Lock()
@@ -183,6 +183,13 @@ func (s *Service) run(ctx context.Context, entry *progressEntry, targets []*acco
 				a.PlanType = q.PlanType
 			}
 			a.CheckedAt = time.Now().Unix()
+			// 额度探测成功 = 预热完成，解除调度屏蔽。
+			if a.WarmPending {
+				a.WarmPending = false
+			}
+			if a.QuotaUnknown {
+				a.QuotaUnknown = false
+			}
 			// 探测成功说明 token 能通过上游鉴权：历史标失效的号（如网络故障窗口误杀）
 			// 复活为正常，随 Pool.Add 回池、Accounts.Add 落盘（watcher 5 分钟内同步保留）。
 			if a.Status == account.StatusDisabled || a.Status == account.StatusNeedRelogin {
@@ -199,9 +206,9 @@ func (s *Service) run(ctx context.Context, entry *progressEntry, targets []*acco
 			refreshed++
 			totalQuota += q.Quota
 			items = append(items, map[string]any{
-				"email":  a.Email,
-				"token":  maskToken(a.Token),
-				"quota":  q.Quota,
+				"email": a.Email,
+				"token": maskToken(a.Token),
+				"quota": q.Quota,
 			})
 			entry.mu.Lock()
 			entry.p.StatusCounts["ok"] = entry.p.StatusCounts["ok"] + 1
