@@ -3,6 +3,17 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.8
+
+**类型**：账号产出与存活统计
+
+新增账号级统计字段与 `GET /api/accounts/stats`：
+
+- 单号产出：`total_images_ok`、`avg_images_per_account`、`median_images`、`p90_images`、`max_images`，恢复次数 `total_revive` / `accounts_revived`（产出跨恢复累计）。
+- 存活分析：`avg_lifetime_h`、`median_lifetime_h`、`death_reason` 分布、`created_by_day` / `died_by_day`、`batch_survival` 批次存活率。
+- 埋点：生图成功/失败累加 `images_ok` / `images_fail`；判死写 `died_at` + `death_reason`；恢复写 `revive_count` + `last_revived_at` 并清死亡标记。
+- 落盘只在判死/复活时触发，避免每次生图写盘。
+
 ## 25.7
 
 **类型**：URL 模式 JPG 内容修复

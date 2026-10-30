@@ -63,6 +63,8 @@ func NewServer(cfg *config.Config) *Server {
 	pool := account.NewPool(nil, 0)
 	// fix10：长冷却（12h 级）落盘，重启后调度仍收敛
 	pool.SetOnCooldown(func(a *account.Account) { _ = accountsSvc.Add(a) })
+	// 统计字段（判死/复活）也要落盘，但不在每次生图成功时写，避免高频 IO。
+	pool.SetOnPersist(func(a *account.Account) { _ = accountsSvc.Add(a) })
 	// 已持久化账号载入号池
 	for _, a := range accountsSvc.List() {
 		pool.Add(a)
@@ -188,6 +190,8 @@ func (s *Server) NewRouter() *gin.Engine {
 	// 真实日志与图片库管理，不再落入 SPA 静态页。
 	(&LogsHandler{Svc: s.LogSvc, Runtime: logsvc.NewRuntime()}).Register(adminGroup)
 	(&ImagesHandler{DataDir: dataDir}).Register(adminGroup)
+	// 账号统计：单号产出 + 存活分析。
+	(&AccountsStatsHandler{Accounts: s.Accounts}).Register(adminGroup)
 	// 图像任务创建、查询与额度摘要。
 	(&ImageTasksHandler{Tasks: s.Tasks, Orch: s.Orch, Accounts: s.Accounts}).Register(adminGroup)
 	if s.Tasks != nil {

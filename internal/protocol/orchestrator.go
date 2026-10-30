@@ -41,11 +41,15 @@ type Orchestrator struct {
 // 不再直接判死号——真正的死号判定交给每日调度的重登识别：
 // 401 只代表 access_token 失效，不代表账号本身已死。
 // 调用方需已 Release 该账号；幂等（已移除则跳过）。
-func (o *Orchestrator) deactivateAccount(acc *account.Account) {
+func (o *Orchestrator) deactivateAccount(acc *account.Account, reason string) {
 	if acc == nil {
 		return
 	}
 	acc.Status = account.StatusNeedRelogin
+	if o.Pool != nil {
+		// 记录死亡时间与原因（用于存活统计）
+		o.Pool.RecordDeath(acc, reason)
+	}
 	if o.Accounts != nil {
 		_ = o.Accounts.Add(acc)
 	}
@@ -320,6 +324,7 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 				}
 			}
 			o.Pool.Release(acc)
+			o.Pool.RecordSuccess(acc)
 			stage := res.Stage
 			stage.AccountPickMs = pickMs
 			stage.ResolveMs = resolveMs
@@ -331,9 +336,10 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		lastErr = err
 		f := failure.Classify(err, 0, err.Error())
 		o.Pool.Release(acc)
+		o.Pool.RecordFail(acc)
 		if isAuthFailure(f) {
 			// token 死号：除名（标失效+落盘+移池），不冷却、不重复选
-			o.deactivateAccount(acc)
+			o.deactivateAccount(acc, f.Code)
 			excluded[acc.Token] = true
 			continue
 		}
@@ -385,7 +391,7 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 			f := failure.Classify(err, 0, err.Error())
 			o.Pool.Release(acc)
 			if isAuthFailure(f) {
-				o.deactivateAccount(acc)
+				o.deactivateAccount(acc, f.Code)
 				excluded[acc.Token] = true
 				continue
 			}
@@ -420,7 +426,7 @@ func (o *Orchestrator) StreamText(ctx context.Context, req TextRequest, onDelta 
 		f := failure.Classify(streamErr, 0, streamErr.Error())
 		o.Pool.Release(acc)
 		if isAuthFailure(f) {
-			o.deactivateAccount(acc)
+			o.deactivateAccount(acc, f.Code)
 			excluded[acc.Token] = true
 			continue
 		}

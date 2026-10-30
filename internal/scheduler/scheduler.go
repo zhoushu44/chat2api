@@ -294,6 +294,8 @@ func (s *Scheduler) recoverAccount(acc *account.Account) bool {
 		}
 		acc.Status = account.StatusNormal
 		acc.TokenExpireAt = tokenExpireAt(newToken)
+		// 统计：记一次复活（清死亡标记、复活数 +1、刷新额度起点）
+		s.Pool.RecordRevive(acc)
 		s.Pool.Remove(oldToken)
 		s.Pool.Add(acc)
 		if s.Svc != nil {

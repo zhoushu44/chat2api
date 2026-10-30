@@ -65,6 +65,18 @@ type Account struct {
 	Summary         map[string]any    `json:"summary,omitempty"`
 	// CooldownUntil 持久化冷却截止（fix10）：仅长冷却（12h 级）写入，重启后恢复调度。
 	CooldownUntil   int64             `json:"cooldown_until,omitempty"`
+	// 统计字段（单号产出 / 存活分析）。
+	// CreatedAt 入池时间；DiedAt 判死时间；DeathReason 死亡原因；
+	// ImagesOK/ImagesFail 累计生图成功/失败数（跨恢复累计）；
+	// ReviveCount 协议恢复成功次数；QuotaInitial 入池时首次观测额度。
+	CreatedAt     int64  `json:"created_at,omitempty"`
+	DiedAt        int64  `json:"died_at,omitempty"`
+	DeathReason   string `json:"death_reason,omitempty"`
+	ImagesOK      int64  `json:"images_ok,omitempty"`
+	ImagesFail    int64  `json:"images_fail,omitempty"`
+	ReviveCount   int    `json:"revive_count,omitempty"`
+	LastRevivedAt int64  `json:"last_revived_at,omitempty"`
+	QuotaInitial  int    `json:"quota_initial,omitempty"`
 	nextAvailable   int64
 	inflight        int32
 }
@@ -102,6 +114,8 @@ type Pool struct {
 	refreshLead time.Duration
 	// onCooldown 长冷却落盘回调（fix10），router 装配为 accountsSvc.Add。
 	onCooldown func(a *Account)
+	// onPersist 统计字段落盘回调（判死/复活时调用），避免每次成功都写盘。
+	onPersist func(a *Account)
 }
 
 func NewPool(onRefresh func(a *Account) (string, error), refreshLead time.Duration) *Pool {
@@ -111,7 +125,12 @@ func NewPool(onRefresh func(a *Account) (string, error), refreshLead time.Durati
 // SetOnCooldown 挂载长冷却落盘回调（fix10）。
 func (p *Pool) SetOnCooldown(fn func(a *Account)) { p.onCooldown = fn }
 
+// SetOnPersist 挂载统计字段落盘回调（判死/复活时触发）。
+func (p *Pool) SetOnPersist(fn func(a *Account)) { p.onPersist = fn }
+
 func (p *Pool) Add(a *Account) {
+	// 统计：首次入池补齐入池时间/初始额度
+	p.EnsureStats(a)
 	// fix10：装载时恢复持久化冷却（重启不失忆）
 	if a.CooldownUntil > 0 {
 		now := time.Now().Unix()
@@ -292,6 +311,69 @@ func (p *Pool) Pick(sel Selector) *Account {
 }
 
 func (p *Pool) Release(a *Account) { atomic.AddInt32(&a.inflight, -1) }
+
+// ── 统计埋点：单号产出 / 存活 ────────────────────────────────────────
+
+// EnsureStats 首次见到账号时补齐入池时间与初始额度（幂等）。
+func (p *Pool) EnsureStats(a *Account) {
+	if a == nil {
+		return
+	}
+	if a.CreatedAt == 0 {
+		a.CreatedAt = time.Now().Unix()
+	}
+	if a.QuotaInitial == 0 && a.Quota > 0 {
+		a.QuotaInitial = a.Quota
+	}
+}
+
+// RecordSuccess 记一次成功生图（跨恢复累加）。
+func (p *Pool) RecordSuccess(a *Account) {
+	if a == nil {
+		return
+	}
+	atomic.AddInt64(&a.ImagesOK, 1)
+}
+
+// RecordFail 记一次失败生图。
+func (p *Pool) RecordFail(a *Account) {
+	if a == nil {
+		return
+	}
+	atomic.AddInt64(&a.ImagesFail, 1)
+}
+
+// RecordDeath 记账号判死：记录死亡时间与原因，仅首次写入。
+// persist 为 true 时通过 onPersist 落盘。
+func (p *Pool) RecordDeath(a *Account, reason string) {
+	if a == nil {
+		return
+	}
+	if a.DiedAt == 0 {
+		a.DiedAt = time.Now().Unix()
+	}
+	if a.DeathReason == "" {
+		a.DeathReason = reason
+	}
+	if p.onPersist != nil {
+		p.onPersist(a)
+	}
+}
+
+// RecordRevive 记一次协议恢复成功（复活回池）。
+func (p *Pool) RecordRevive(a *Account) {
+	if a == nil {
+		return
+	}
+	a.ReviveCount++
+	a.LastRevivedAt = time.Now().Unix()
+	// 复活后重新起算存活期
+	a.DiedAt = 0
+	a.DeathReason = ""
+	if p.onPersist != nil {
+		p.onPersist(a)
+	}
+}
 
 // Cooldown 账号冷却。fix10：长冷却（>5min）同步落盘，重启后由 Add 恢复。
 func (p *Pool) Cooldown(a *Account, until time.Time) {

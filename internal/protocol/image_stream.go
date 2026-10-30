@@ -144,7 +144,7 @@ func (o *Orchestrator) GenerateStream(ctx context.Context, req GenerateRequest, 
 		f := classifyFailure(err)
 		o.Pool.Release(acc)
 		if isAuthFailure(f) {
-			o.deactivateAccount(acc)
+			o.deactivateAccount(acc, f.Code)
 			excluded[acc.Token] = true
 			continue
 		}
