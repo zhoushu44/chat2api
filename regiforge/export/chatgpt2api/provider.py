@@ -57,6 +57,42 @@ class ChatGPT2ApiExportProvider(ExportProvider):
                 value = extra.get(key)
                 if isinstance(value, str) and value.strip():
                     entry[key] = value.strip()
+            # 指纹透传（P0-1）：把注册时的真实指纹带到号池，
+            # 生图沿用同一套 UA/impersonate/时区，避免「注册一套身份、生图另一套」。
+            fp_raw = extra.get("egress_fingerprint")
+            fp_map = {}
+            if isinstance(fp_raw, dict):
+                fp_map = fp_raw
+            elif isinstance(fp_raw, str) and fp_raw.strip().startswith("{"):
+                try:
+                    fp_map = json.loads(fp_raw)
+                except Exception:
+                    fp_map = {}
+            if fp_map:
+                mapped = {}
+                # 兼容注册侧键名（下划线）与 Go 侧键名（连字符）
+                alias = {
+                    "user_agent": "user-agent",
+                    "userAgent": "user-agent",
+                    "oai_device_id": "oai-device-id",
+                    "oaiDeviceId": "oai-device-id",
+                    "accept_language": "accept-language",
+                    "acceptLanguage": "accept-language",
+                    "sec_ch_ua": "sec-ch-ua",
+                    "sec_ch_ua_platform": "sec-ch-ua-platform",
+                }
+                for k, v in fp_map.items():
+                    if not isinstance(v, str) or not v.strip():
+                        continue
+                    mapped[alias.get(k, k)] = v.strip()
+                if mapped:
+                    entry["fp"] = mapped
+            # OAI 设备 ID 单独透传：注册时用的 device id 必须沿用，否则等于换设备
+            did = extra.get("oai_device_id") or extra.get("oaiDeviceId")
+            if isinstance(did, str) and did.strip():
+                entry.setdefault("fp", {})
+                if isinstance(entry["fp"], dict):
+                    entry["fp"]["oai-device-id"] = did.strip()
             entries.append(entry)
             credentials.append(account.apikey)
         if not entries:

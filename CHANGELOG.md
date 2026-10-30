@@ -3,6 +3,22 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.6
+
+**类型**：补全注册指纹透传（P0-1 最后一环）
+
+问题：注册侧只写了 `egress_fingerprint = "chrome/chrome136"` 这样的字符串，
+导出器又只透传 password/totp/session，导致 Go 侧 `Account.FP` 全为空，
+生图时只能按 token 哈希重选一套指纹 —— 与注册时的身份不一致。
+
+修复：
+
+- 注册侧改为输出**完整指纹对象**（user_agent / impersonate / accept_language / sec_ch_ua_platform / country / browser_type）。
+- 导出器新增 `fp` 透传，兼容下划线与连字符键名。
+- Go 侧 `NewBackend` 的 `fpOverride` 优先级最高，指纹从注册到生图全程一致。
+
+实测：新注册 5/5 成功，`fp` 完整落库（UA/语言/平台/国家），生图 3/4 成功（1 个为 prompt 内容策略）。
+
 ## 26.5
 
 **类型**：协议恢复改用账号固定出口
