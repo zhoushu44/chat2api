@@ -361,6 +361,14 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			o.Pool.Release(acc)
 			o.Pool.RecordSuccess(acc)
 			account.BreakerRecordSuccess(acc.Token)
+			// 生图成功后删除上游会话痕迹（对齐 basketikun image_remove_conversation_after_result）
+			if res.ConversationID != "" {
+				go func(b *backend.Backend, cid string) {
+					dctx, dcancel := context.WithTimeout(context.Background(), 15*time.Second)
+					defer dcancel()
+					_ = b.DeleteConversation(dctx, cid)
+				}(be, res.ConversationID)
+			}
 			stage := res.Stage
 			stage.AccountPickMs = pickMs
 			stage.ResolveMs = resolveMs

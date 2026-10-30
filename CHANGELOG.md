@@ -3,6 +3,40 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.2
+
+**类型**：生图后自动删除会话痕迹
+
+参考 [basketikun/chatgpt2api](https://github.com/basketikun/chatgpt2api)（6,790 星）的 `image_remove_conversation_after_result`：
+
+- 新增 `Backend.DeleteConversation`：PATCH `/backend-api/conversations/{id}` 设置 `is_visible: false`。
+- orchestrator 生图成功后**异步删除会话**（不阻断返回，best-effort）。
+- 避免会话累积被风控关联为批量使用。
+
+### basketikun/chatgpt2api 深度调研结论
+
+已下载并逐文件分析源码（account_service.py 76KB、proxy_service.py 24KB、openai_backend_api.py 126KB 等）：
+
+**他们有而我们没有的：**
+- FlareSolverr Cloudflare 自动通关（cf_clearance cookie 刷新）
+- 403 自动重置 TLS 会话
+- 新号失效宽限期（10 分钟内不判死，需连续 2 次+间隔 30 秒）
+- 多存储后端（JSON/SQLite/PostgreSQL/Git）
+- 聊天补全缓存（60s TTL、256 条、去重）
+- Codex 图片生成（2K/4K）
+- 可编辑 PSD/PPT 导出
+
+**我们有而他们没有的：**
+- 设备 ID SHA-1 稳定派生（他们用 token 刷新，会变）
+- 指纹完整透传（UA/语言/平台）
+- 养号系统
+- 熔断器
+- 同号最小间隔 + 单号日限
+- 403 分类隔离（upstream_forbidden）
+- 429 冷却换号
+- 账号统计（产出/存活/批次）
+- Go 语言性能
+
 ## 27.1
 
 **类型**：养号系统（对齐 lzA6 account_aging）
