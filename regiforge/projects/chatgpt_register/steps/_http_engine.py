@@ -1510,7 +1510,20 @@ async def register_http(
             # 出口观测：注册成功（指纹随账号带入 accounts.jsonl）
             out["egress_country"] = country
             out["egress_tz"] = ip_tz
-            out["egress_fingerprint"] = f"{fp['browser_type']}/{fp['impersonate']}"
+            # 完整指纹透传（P0-1）：只存 "chrome/chrome136" 这类字符串无法让
+            # 生图侧还原身份，必须把 UA / impersonate / 语言 / 平台 一并带出。
+            out["egress_fingerprint"] = {
+                "user_agent": fp.get("user_agent") or fp.get("userAgent") or "",
+                "impersonate": fp.get("impersonate") or "",
+                "accept_language": fp.get("accept_language") or fp.get("locale") or "",
+                "sec_ch_ua_platform": fp.get("sec_ch_ua_platform") or "",
+                "browser_type": fp.get("browser_type") or "",
+                "timezone": ip_tz or fp.get("timezone") or "",
+                "country": country or "",
+                "screen_width": str(fp.get("screen_width") or ""),
+                "screen_height": str(fp.get("screen_height") or ""),
+                "oai_device_id": fp.get("oai_device_id") or fp.get("oaiDeviceId") or "",
+            }
             _append_egress(
                 {
                     **egress_rec,

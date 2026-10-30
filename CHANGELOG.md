@@ -3,6 +3,16 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.7
+
+**类型**：把注册指纹补丁固化进镜像
+
+26.6 只改了容器内运行文件，镜像内 _http_engine.py 仍是旧版（只有 chrome/chrome136 字符串）。
+本版把完整指纹输出写进仓库源文件并重建镜像，重启不再丢失。
+
+- egiforge/projects/chatgpt_register/steps/_http_engine.py：gress_fingerprint 输出完整对象。
+- 配合 26.6 的导出器 p 透传，注册→号池→生图身份链条完整。
+
 ## 26.6
 
 **类型**：补全注册指纹透传（P0-1 最后一环）
