@@ -348,6 +348,10 @@ func (p *Pool) Pick(sel Selector) *Account {
 		if !BreakerAllows(a.Token) {
 			continue
 		}
+		// 养号期：新号前 N 天不参与生图调度（对齐 lzA6 account_aging）。
+		if a.IsAging() {
+			continue
+		}
 			max := sel.MaxInflight
 			if max <= 0 {
 				max = 1

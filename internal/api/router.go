@@ -92,6 +92,14 @@ func NewServer(cfg *config.Config) *Server {
 		if cfg.CircuitBreakerCount > 0 {
 			account.SetCircuitBreakerConfig(cfg.CircuitBreakerCount, 30, 3)
 		}
+		// 养号配置
+		account.SetAgingConfig(account.AgingConfig{
+			Enabled:        cfg.AccountAging.Enabled,
+			Days:           cfg.AccountAging.Days,
+			NoAPIDays:      cfg.AccountAging.NoAPIDays,
+			LowFreqDays:    cfg.AccountAging.LowFreqDays,
+			AutoApplyToNew: cfg.AccountAging.AutoApplyToNew,
+		})
 		// 按账号分配出口 IP：每个账号固定一个 warp 粘性会话出口。
 		eg := egress.New(cfg.Egress.PoolURL, cfg.Egress.APIKey)
 		eg.SetEnabled(cfg.Egress.Enabled)

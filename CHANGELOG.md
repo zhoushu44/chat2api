@@ -3,6 +3,21 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.1
+
+**类型**：养号系统（对齐 lzA6 account_aging）
+
+新增 `internal/account/aging.go`：
+
+- `AgingConfig`：`enabled` / `days` / `no_api_days` / `low_freq_days` / `auto_apply_to_new`
+- `IsAging()`：新号入池前 N 天不参与生图调度（只做额度探测）
+- `IsLowFreq()`：前 N 天低频期（调度优先级降低但可用）
+- `Pool.Pick` 在熔断器检查后增加养号拦截
+- 配置项 `account_aging` 注入到 `config.json`
+- 默认关闭；开启后新号入池当天不参与生图，第二天才放行
+
+**这是 lzA6/GPT-Codex-image-2api v2.37.0 最核心的存活率创新**：新号最脆弱的是头几分钟被直接打生图请求，养号期让号先「静置」一天，只做探测不做业务。
+
 ## 27.0
 
 **类型**：账号保护体系完善 + 开源调研成果

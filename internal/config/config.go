@@ -193,13 +193,24 @@ type Config struct {
 	// 单号保护：日产出上限 + 最小间隔 + 连续失败熔断
 	DailyImageCap       int `json:"daily_image_cap"`
 	MinIntervalSec      int `json:"min_interval_sec"`
-	CircuitBreakerCount int `json:"circuit_breaker_count"`
+	CircuitBreakerCount int          `json:"circuit_breaker_count"`
+	// 养号系统（对齐 lzA6 account_aging）：新号前几天不参与调度
+	AccountAging        AgingConfig `json:"account_aging"`
 	// 按账号分配出口 IP（把并发分散到多个 warp 出口，降低单 IP 限流）。
 	Egress EgressConfig `json:"egress"`
 }
 
 // EgressConfig 账号出口分配：每个账号固定一个 warp 粘性会话出口。
-type EgressConfig struct {
+// AgingConfig 养号配置
+	type AgingConfig struct {
+	Enabled        bool `json:"enabled"`
+	Days           int  `json:"days"`
+	NoAPIDays      int  `json:"no_api_days"`
+	LowFreqDays    int  `json:"low_freq_days"`
+	AutoApplyToNew bool `json:"auto_apply_to_new"`
+}
+
+	type EgressConfig struct {
 	Enabled bool   `json:"enabled"`
 	PoolURL string `json:"pool_url"`
 	APIKey  string `json:"api_key"`
