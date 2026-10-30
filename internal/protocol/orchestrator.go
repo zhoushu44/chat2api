@@ -14,6 +14,7 @@ import (
 	"chatgpt2api/internal/account"
 	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/backend/failure"
+	"chatgpt2api/internal/egress"
 	"chatgpt2api/internal/filter"
 	"chatgpt2api/internal/logsvc"
 	"chatgpt2api/internal/monitor/metrics"
@@ -30,7 +31,10 @@ type Orchestrator struct {
 	Accounts *account.Service
 	Logger   *logsvc.Service
 	Metrics  *metrics.Metrics // 仪表盘指标（P1.7，可为 nil）
-	Config   struct {
+	// Egress 按账号分配出口 IP（可选）；启用时每个账号走固定 warp 出口，
+	// 避免所有账号挤在同一 IP 被上游限流。
+	Egress *egress.Service
+	Config struct {
 		MaxAttempts int
 		Concurrency int
 		Proxy       string // 出站代理（P2.7：config.EffectiveProxy 注入，backend tls-client 透传）
@@ -67,18 +71,27 @@ func isAuthFailure(f failure.ImageFailure) bool {
 func (o *Orchestrator) getBackend(acc *account.Account) (*backend.Backend, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	be, ok := o.Backends[acc.Token]
+	// 出口选择：开启「按账号分配出口」时，每个账号走自己的固定代理；
+	// 否则沿用全局代理。缓存键带上代理，代理变化时自动重建。
+	proxy := o.Config.Proxy
+	if o.Egress != nil {
+		if p := o.Egress.ProxyFor(acc.ID); p != "" {
+			proxy = p
+		}
+	}
+	cacheKey := acc.Token + "|" + proxy
+	be, ok := o.Backends[cacheKey]
 	if ok {
 		return be, nil
 	}
-	b, err := backend.NewBackend(acc.Token, acc.FP, o.Config.Proxy)
+	b, err := backend.NewBackend(acc.Token, acc.FP, proxy)
 	if err != nil {
 		return nil, err
 	}
 	if o.Backends == nil {
 		o.Backends = make(map[string]*backend.Backend)
 	}
-	o.Backends[acc.Token] = b
+	o.Backends[cacheKey] = b
 	return b, nil
 }
 
@@ -509,6 +522,11 @@ func cooldownFor(f failure.ImageFailure) time.Duration {
 	base := 30 * time.Second
 	if f.Code == "unsupported_model" {
 		base = 12 * time.Hour
+	}
+	// 429 限流：账号级短冷却。冷却太短会被立刻复用又撞限流，
+	// 太长会让可用账号变少，取 2 分钟折中（不改判定，仅降复用频率）。
+	if f.Code == "account_rate_limited" || f.Code == "upstream_rate_limited" || f.Code == "image_quota_exhausted" {
+		base = 2 * time.Minute
 	}
 	jitter := time.Duration(rand.Int63n(int64(base) / 10))
 	return base + jitter

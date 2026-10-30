@@ -3,6 +3,24 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.2
+
+**类型**：429 冷却重试 + 按账号分配出口 IP
+
+### 429 冷却重试（不改判定，只改分类与处理路径）
+
+- 新增失败码 `account_rate_limited`（Scope=account，StatusCode=429）：429 不再走 `upstream_rate_limited`（transient 且不可换号），改为账号级——**冷却该号并切换其它号重试**，不再让单个 429 直接失败整个请求。
+- `cooldownFor`：429 相关失败冷却从 30 秒提升到 **2 分钟**（避免刚冷却就被复用再次撞限流）。
+- 未改动死号判定逻辑：仍只有 `auth_invalid` 才标「待重登」。
+
+### 按账号分配出口 IP（设置页可开关）
+
+- 新增 `internal/egress`：按账号 ID 哈希生成稳定 sid，向 warp 池取**固定粘性出口**，同账号始终同出口。
+- `Orchestrator.getBackend` 优先使用账号专属出口，缓存键含代理，切换开关自动重建。
+- 新增 `GET/POST /api/egress`；`POST /api/settings` 支持 `egress_enabled` 热更。
+- 设置页「账号策略」新增开关「按账号分配出口 IP」。
+- 默认关闭；取不到出口时自动回退全局代理，不阻断主流程。
+
 ## 26.1
 
 **类型**：手动触发验活 + 协议恢复

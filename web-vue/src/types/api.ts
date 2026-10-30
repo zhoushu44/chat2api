@@ -67,6 +67,7 @@ export interface Settings {
   auto_remove_invalid_accounts?: boolean
   auto_remove_rate_limited_accounts?: boolean
   auto_relogin_after_refresh?: boolean
+  egress_enabled?: boolean
   log_levels: string[]
   global_system_prompt?: string
   sensitive_words?: string[]

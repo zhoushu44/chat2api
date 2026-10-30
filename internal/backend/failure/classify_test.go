@@ -15,7 +15,7 @@ want string
 }{
 {errors.New("unauthorized"), 401, "", "auth_invalid"},
 {nil, 429, "quota exceeded", "image_quota_exhausted"},
-{nil, 429, "", "upstream_rate_limited"},
+{nil, 429, "", "account_rate_limited"},
 {errors.New("content policy violation"), 400, "", "content_policy_violation"},
 {errors.New("poll timeout"), 0, "", "image_poll_timeout"},
 {errors.New("stream timeout"), 0, "", "image_stream_timeout"},
@@ -55,6 +55,7 @@ scope  string
 "upstream_connection_failed": {502, "transient"},
 "upstream_connection_timeout": {504, "transient"},
 "upstream_rate_limited": {429, "transient"},
+"account_rate_limited": {429, "account"},
 "image_poll_timeout": {502, "transient"},
 "image_stream_timeout": {502, "transient"},
 "image_stream_interrupted": {502, "transient"},

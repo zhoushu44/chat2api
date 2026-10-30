@@ -190,6 +190,15 @@ type Config struct {
 	QuotaLimits         QuotaLimitsConfig         `json:"quota_limits"`
 	// 自动移除异常账号：确认真死号后从持久化删除；默认关闭，避免误清。
 	AutoRemoveInvalidAccounts bool `json:"auto_remove_invalid_accounts"`
+	// 按账号分配出口 IP（把并发分散到多个 warp 出口，降低单 IP 限流）。
+	Egress EgressConfig `json:"egress"`
+}
+
+// EgressConfig 账号出口分配：每个账号固定一个 warp 粘性会话出口。
+type EgressConfig struct {
+	Enabled bool   `json:"enabled"`
+	PoolURL string `json:"pool_url"`
+	APIKey  string `json:"api_key"`
 }
 
 func defaults() *Config {
@@ -245,6 +254,12 @@ func defaults() *Config {
 		ImageGeneration: ImageGenerationConfig{
 			Enabled:      true,
 			OutputFormat: "b64_json",
+		},
+		// 默认关闭；设置页开启后按账号固定 warp 出口。
+		// PoolURL 指向本机 warp 池（容器内经 172.17.0.1 访问）。
+		Egress: EgressConfig{
+			Enabled: false,
+			PoolURL: "http://172.17.0.1:4433/api/proxies?num=1&type=json&format=n&sid={sid}&time=20",
 		},
 		QuotaLimits: QuotaLimitsConfig{
 			Enabled:            true,

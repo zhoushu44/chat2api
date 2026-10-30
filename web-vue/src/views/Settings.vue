@@ -345,6 +345,12 @@
                 <div class="settings-check-item">
                   <Checkbox v-model="localSettings.auto_relogin_after_refresh">刷新后自动重登</Checkbox>
                 </div>
+                <div class="settings-check-item">
+                  <Checkbox v-model="localSettings.egress_enabled">按账号分配出口 IP</Checkbox>
+                  <p class="mt-1 text-xs text-muted-foreground">
+                    开启后每个账号固定一个 warp 出口，避免所有账号共用一个 IP 被上游限流（429）。需服务器已部署 warp 池。
+                  </p>
+                </div>
               </div>
             </FormSection>
 

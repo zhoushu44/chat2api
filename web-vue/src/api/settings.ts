@@ -184,6 +184,7 @@ export function normalizeSettings(raw: RawSettings | null | undefined): Settings
     auto_remove_invalid_accounts: boolValue(source.auto_remove_invalid_accounts, false),
     auto_remove_rate_limited_accounts: boolValue(source.auto_remove_rate_limited_accounts, false),
     auto_relogin_after_refresh: boolValue(source.auto_relogin_after_refresh, false),
+  egress_enabled: boolValue(source.egress_enabled, false),
     log_levels: Array.isArray(source.log_levels)
       ? source.log_levels.map((item) => cleanString(item).toLowerCase()).filter((item) => ['debug', 'info', 'warning', 'error'].includes(item))
       : [],

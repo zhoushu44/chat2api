@@ -40,6 +40,9 @@ var policies = map[string]FailurePolicy{
 "upstream_connection_failed":   {Scope: "transient", Retryable: true, StatusCode: 502, ErrorType: "server_error"},
 "upstream_connection_timeout":  {Scope: "transient", Retryable: true, StatusCode: 504, ErrorType: "server_error"},
 "upstream_rate_limited":        {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 429, ErrorType: "rate_limit_error"},
+// account_rate_limited：429 限流（非额度耗尽）。按「账号级 + 冷却」处理：
+// 不做死号判定，只让该号短暂冷却并切换到其它号重试，避免限流把可用账号打光。
+"account_rate_limited":         {Scope: "account", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 429, ErrorType: "rate_limit_error"},
 "image_poll_timeout":           {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
 "image_stream_timeout":         {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
 "image_stream_interrupted":     {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
@@ -58,8 +61,8 @@ var policies = map[string]FailurePolicy{
 "insufficient_quota":           {Scope: "account", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 429, ErrorType: "insufficient_quota"},
 }
 
-// PolicyCount 与 Python FAILURE_POLICIES 的 22 条对齐（P1.6 验收用）。
-const PolicyCount = 22
+// PolicyCount 与策略表条数对齐（原 22 条 + account_rate_limited = 23）。
+const PolicyCount = 23
 
 func New(code string, raw any) ImageFailure {
 p, ok := policies[code]
@@ -92,7 +95,7 @@ func Classify(err error, statusCode int, body string) ImageFailure {
 	case strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limited") || statusCode == 429 && strings.Contains(msg, "quota"):
 		return New("image_quota_exhausted", msg)
 	case statusCode == 429:
-		return New("upstream_rate_limited", msg)
+		return New("account_rate_limited", msg)
 	case strings.Contains(msg, "content_policy") || strings.Contains(msg, "content policy") || strings.Contains(msg, "content filter") || strings.Contains(msg, "policy_violation") || strings.Contains(msg, "policy violation") || strings.Contains(msg, "safety"):
 		return New("content_policy_violation", msg)
 	case strings.Contains(msg, "decode image base64") || strings.Contains(msg, "illegal base64") || strings.Contains(msg, "invalid_image_input"):
