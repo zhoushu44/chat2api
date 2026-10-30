@@ -17,7 +17,8 @@ type AccountsStatsHandler struct {
 }
 
 func (h *AccountsStatsHandler) Register(r *gin.RouterGroup) {
-	r.GET("/accounts/stats", h.Get)
+	// 注意：不能用 /accounts/stats —— 会与已有的 /accounts/:id 通配路由冲突导致 Gin panic。
+	r.GET("/stats/accounts", h.Get)
 }
 
 func (h *AccountsStatsHandler) Get(c *gin.Context) {

@@ -31,7 +31,7 @@ func TestAccountsStats(t *testing.T) {
 	h.Register(r.Group("/api"))
 
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/api/accounts/stats", nil)
+	req, _ := http.NewRequest("GET", "/api/stats/accounts", nil)
 	r.ServeHTTP(w, req)
 	if w.Code != 200 {
 		t.Fatalf("code=%d body=%s", w.Code, w.Body.String())

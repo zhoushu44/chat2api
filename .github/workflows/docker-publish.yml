@@ -13,7 +13,7 @@ env:
   # 大版本号：升级时只改这一行，自动同步 24.1 + latest 双标签
   # 注意：必须与 git tag / VERSION 保持一致，否则镜像标签与内容不符
   #       （24.0 曾因 fix1~fix10 未随 CI 构建而导致「标签对不上代码」）
-  TAG_MAJOR: "25.8"
+  TAG_MAJOR: "25.9"
 
 jobs:
   build-and-push:

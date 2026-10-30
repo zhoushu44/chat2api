@@ -3,6 +3,13 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 25.9
+
+**类型**：修复统计路由冲突
+
+- `/api/accounts/stats` 与已有 `/api/accounts/:id` 通配路由冲突导致 Gin panic、服务启动失败（25.8 的致命问题）。
+- 统计接口改为 `GET /api/stats/accounts`，避开通配路由。
+
 ## 25.8
 
 **类型**：账号产出与存活统计
