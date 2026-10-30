@@ -71,6 +71,39 @@ function adaptDashboardToStats(dashboard: DashboardResponse): AdminStats {
   }
 }
 
+export type AccountOutputStats = {
+  total_images_ok: number
+  total_images_fail: number
+  accounts_with_output: number
+  avg_images_per_account: number
+  median_images: number
+  p90_images: number
+  max_images: number
+  total_revive: number
+  accounts_revived: number
+  avg_images_all_accounts: number
+}
+
+export type AccountLifeStats = {
+  total: number
+  alive: number
+  dead: number
+  need_relogin: number
+  image_blocked: number
+  avg_lifetime_h: number
+  median_lifetime_h: number
+  death_reason: Record<string, number>
+  created_by_day: Record<string, number>
+  died_by_day: Record<string, number>
+  batch_survival: Array<{ batch: string; total: number; alive: number; survival_pct: number }>
+  as_of: number
+}
+
+export type AccountStatsResponse = {
+  output: AccountOutputStats
+  life: AccountLifeStats
+}
+
 export const statsApi = {
   async overview(timeRange: string = '24h') {
     const dashboard = await apiClient.get<never, DashboardResponse>('/api/dashboard', {
@@ -79,5 +112,10 @@ export const statsApi = {
       },
     })
     return adaptDashboardToStats(dashboard)
+  },
+
+  // 账号产出与存活统计（单号出图数 / 存活时长 / 批次存活率）
+  async accountStats() {
+    return apiClient.get<never, AccountStatsResponse>('/api/stats/accounts')
   },
 }

@@ -1,5 +1,6 @@
-import { onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
+import { computed, onActivated, onBeforeUnmount, onDeactivated, onMounted, ref, watch } from 'vue'
 import { statsApi } from '@/api'
+import type { AccountStatsResponse } from '@/api/stats'
 import {
   getLineChartTheme,
   getPieChartTheme,
@@ -155,6 +156,70 @@ export function useDashboardPage() {
   const overviewCache = new Map<string, OverviewPayload>()
   const overviewRequests = new Map<string, Promise<OverviewPayload>>()
 
+  // 账号产出与存活统计
+  const accountStats = ref<AccountStatsResponse | null>(null)
+  const accountStatsLoading = ref(false)
+  const accountStatsError = ref(false)
+
+  async function loadAccountStats() {
+    if (accountStatsLoading.value) return
+    accountStatsLoading.value = true
+    accountStatsError.value = false
+    try {
+      accountStats.value = await statsApi.accountStats()
+    } catch (error) {
+      console.error('[dashboard] account stats failed', error)
+      accountStatsError.value = true
+    } finally {
+      accountStatsLoading.value = false
+    }
+  }
+
+  function formatNum(value: unknown, digits = 0) {
+    const n = Number(value || 0)
+    if (!Number.isFinite(n)) return '-'
+    return digits > 0 ? n.toFixed(digits) : Math.round(n).toLocaleString('zh-CN')
+  }
+
+  const outputSummary = computed(() => {
+    const o = accountStats.value?.output
+    if (!o) return []
+    return [
+      { label: '平均单号产出', value: `${formatNum(o.avg_images_per_account, 1)} 张`, hint: '有产出账号均值' },
+      { label: '中位数', value: `${formatNum(o.median_images)} 张`, hint: '一半账号低于此值' },
+      { label: 'P90', value: `${formatNum(o.p90_images)} 张`, hint: '头部账号水平' },
+      { label: '最高', value: `${formatNum(o.max_images)} 张`, hint: '单号最高产出' },
+      { label: '累计成功', value: `${formatNum(o.total_images_ok)} 张`, hint: `失败 ${formatNum(o.total_images_fail)}` },
+      { label: '含无产出均值', value: `${formatNum(o.avg_images_all_accounts, 1)} 张`, hint: `${formatNum(o.accounts_with_output)} 个号有产出` },
+    ]
+  })
+
+  const lifeSummary = computed(() => {
+    const l = accountStats.value?.life
+    if (!l) return []
+    return [
+      { label: '平均存活', value: `${formatNum(l.avg_lifetime_h, 1)} 小时`, hint: '已死账号均值' },
+      { label: '中位存活', value: `${formatNum(l.median_lifetime_h, 1)} 小时`, hint: '一半账号活不到' },
+      { label: '存活 / 失效', value: `${formatNum(l.alive)} / ${formatNum(l.dead)}`, hint: `待重登 ${formatNum(l.need_relogin)}` },
+      { label: '恢复次数', value: formatNum(accountStats.value?.output.total_revive ?? 0), hint: `${formatNum(accountStats.value?.output.accounts_revived ?? 0)} 个号恢复过` },
+    ]
+  })
+
+  const batchSurvival = computed(() => accountStats.value?.life.batch_survival ?? [])
+
+  const deathReasons = computed(() => {
+    const reasons = accountStats.value?.life.death_reason || {}
+    const labelMap: Record<string, string> = {
+      token_revoked: 'token 吊销',
+      account_deactivated: '账号停用',
+      auth_invalid: '认证失效',
+      unknown: '未知（历史）',
+    }
+    return Object.entries(reasons)
+      .map(([key, count]) => ({ key, label: labelMap[key] || key, count }))
+      .sort((a, b) => b.count - a.count)
+  })
+
   const trendChartRef = ref<HTMLDivElement | null>(null)
   const modelChartRef = ref<HTMLDivElement | null>(null)
   const successRateChartRef = ref<HTMLDivElement | null>(null)
@@ -287,6 +352,7 @@ export function useDashboardPage() {
 
   onMounted(async () => {
     await preloadInitialDashboardData()
+    void loadAccountStats()
 
     scheduleChartBootstrap()
     bindResizeListener()
@@ -963,6 +1029,14 @@ export function useDashboardPage() {
 
   return {
     stats,
+    accountStats,
+    accountStatsLoading,
+    accountStatsError,
+    outputSummary,
+    lifeSummary,
+    batchSurvival,
+    deathReasons,
+    loadAccountStats,
     timeRangeHourlyRequests,
     timeRangeTrend,
     timeRangeSuccessRate,
