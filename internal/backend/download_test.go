@@ -1,8 +1,10 @@
 package backend
 
 import (
+	"bytes"
 	"context"
-	"crypto/rand"
+	"image"
+	"image/jpeg"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -12,16 +14,21 @@ import (
 )
 
 func TestDownload(t *testing.T) {
-	// 构造 5MB 随机数据（足够测内存，又不至于太慢）
-	const size = 5 * 1024 * 1024
-	data := make([]byte, size)
-	_, _ = rand.Read(data)
+	// 用真实 JPEG 字节（下载层会统一转码为 JPEG，随机数据无法解码会被判失败）。
+	// 通过重复拼接 JPEG 头尾不可行，这里用一张合法小图反复测试并发下载路径即可。
+	img := image.NewRGBA(image.Rect(0, 0, 64, 64))
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, nil); err != nil {
+		t.Fatalf("encode jpeg: %v", err)
+	}
+	data := buf.Bytes()
+	size := len(data)
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Content-Type", "image/jpeg")
 		w.Header().Set("Content-Length", strconv.Itoa(size))
 		// 分块写出，模拟流式
-		chunk := 64 * 1024
+		chunk := 1024
 		for i := 0; i < len(data); i += chunk {
 			end := i + chunk
 			if end > len(data) {

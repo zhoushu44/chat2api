@@ -43,6 +43,10 @@ var policies = map[string]FailurePolicy{
 // account_rate_limited：429 限流（非额度耗尽）。按「账号级 + 冷却」处理：
 // 不做死号判定，只让该号短暂冷却并切换到其它号重试，避免限流把可用账号打光。
 "account_rate_limited":         {Scope: "account", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 429, ErrorType: "rate_limit_error"},
+// upstream_forbidden：403 但账号未停用（风控/权限拒绝）。按「账号级 + 长冷却」处理：
+// 此前 403 落到 default→upstream_error(transient)，会立刻换号且该号不隔离，
+// 导致同一个号被反复选中、反复 403。现在改为冷却隔离该号。
+"upstream_forbidden":           {Scope: "account", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 403, ErrorType: "permission_error"},
 "image_poll_timeout":           {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
 "image_stream_timeout":         {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
 "image_stream_interrupted":     {Scope: "transient", Capability: strPtr("image_generation"), Retryable: false, StatusCode: 502, ErrorType: "server_error"},
@@ -62,7 +66,7 @@ var policies = map[string]FailurePolicy{
 }
 
 // PolicyCount 与策略表条数对齐（原 22 条 + account_rate_limited = 23）。
-const PolicyCount = 23
+const PolicyCount = 24
 
 func New(code string, raw any) ImageFailure {
 p, ok := policies[code]
@@ -90,6 +94,13 @@ func Classify(err error, statusCode int, body string) ImageFailure {
 	switch {
 	case strings.Contains(msg, "unauthorized") || strings.Contains(msg, "invalid_api_key") || statusCode == 401:
 		return New("auth_invalid", msg)
+	// 账号被上游停用（403 + account_deactivated）：属于真死号，按 auth 失效处理，
+	// 走「待重登」而不是被当成临时错误反复重试。
+	case strings.Contains(msg, "account_deactivated") || strings.Contains(msg, "deleted or deactivated"):
+		return New("auth_invalid", msg)
+	// 403 但账号未停用（风控/权限拒绝）：账号级 + 长冷却，避免反复打同一个号。
+	case statusCode == 403 || strings.Contains(msg, "forbidden"):
+		return New("upstream_forbidden", msg)
 	case strings.Contains(msg, "insufficient_quota") || strings.Contains(msg, "quota_exhausted"):
 		return New("insufficient_quota", msg)
 	case strings.Contains(msg, "rate limit") || strings.Contains(msg, "rate_limited") || statusCode == 429 && strings.Contains(msg, "quota"):

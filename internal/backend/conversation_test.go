@@ -34,12 +34,12 @@ func TestSplitImageModel(t *testing.T) {
 
 func TestImageModelSlug(t *testing.T) {
 	cases := map[string]string{
-		"gpt-image-2":              "gpt-5-3",
-		"codex-gpt-image-2":        "codex-gpt-image-2",
-		"plus-codex-gpt-image-2":   "codex-gpt-image-2",
-		"":                         "auto",
-		"gpt-5":                    "auto",
-		"unknown-model":            "auto",
+		"gpt-image-2":            "auto",
+		"codex-gpt-image-2":      "codex-gpt-image-2",
+		"plus-codex-gpt-image-2": "codex-gpt-image-2",
+		"":                       "auto",
+		"gpt-5":                  "auto",
+		"unknown-model":          "auto",
 	}
 	for in, want := range cases {
 		if got := ImageModelSlug(in); got != want {
@@ -68,7 +68,7 @@ func TestPreparePayloadFields(t *testing.T) {
 	for key, want := range map[string]any{
 		"action":                "next",
 		"fork_from_shared_post": false,
-		"model":                 "gpt-5-3", // slug 映射生效
+		"model":                 "auto", // slug 映射生效
 		"client_prepare_state":  "success",
 		"timezone_offset_min":   -480,
 		"timezone":              "Asia/Shanghai",
@@ -113,7 +113,7 @@ func TestPreparePayloadFields(t *testing.T) {
 func TestStartPayloadTextOnly(t *testing.T) {
 	p := StartImagePayload("赛博朋克猫", "gpt-image-2", nil)
 
-	if p["action"] != "next" || p["model"] != "gpt-5-3" || p["client_prepare_state"] != "sent" {
+	if p["action"] != "next" || p["model"] != "auto" || p["client_prepare_state"] != "sent" {
 		t.Errorf("start 基础字段错误: %v", p)
 	}
 	if p["enable_message_followups"] != true || p["supports_buffering"] != true {
@@ -279,9 +279,9 @@ func TestImageHeaders(t *testing.T) {
 func TestFingerprintMerge(t *testing.T) {
 	base := DefaultFingerprint()
 	merged := base.Merge(map[string]string{
-		"user-agent":     "CustomUA/1.0",
-		"impersonate":    "edge101",
-		"oai-device-id":  "", // 空值不覆盖
+		"user-agent":    "CustomUA/1.0",
+		"impersonate":   "edge101",
+		"oai-device-id": "", // 空值不覆盖
 	})
 	if merged.UserAgent != "CustomUA/1.0" || merged.Impersonate != "edge101" {
 		t.Errorf("覆盖失败: %+v", merged)

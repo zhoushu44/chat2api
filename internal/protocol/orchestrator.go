@@ -528,6 +528,10 @@ func cooldownFor(f failure.ImageFailure) time.Duration {
 	if f.Code == "account_rate_limited" || f.Code == "upstream_rate_limited" || f.Code == "image_quota_exhausted" {
 		base = 2 * time.Minute
 	}
+	// 403 风控/权限拒绝：长冷却隔离，避免反复打同一个号（此前会被判 transient 反复重试）。
+	if f.Code == "upstream_forbidden" {
+		base = 30 * time.Minute
+	}
 	jitter := time.Duration(rand.Int63n(int64(base) / 10))
 	return base + jitter
 }

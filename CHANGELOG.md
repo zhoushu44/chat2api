@@ -3,6 +3,31 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.3
+
+**类型**：修复「死号」根因（P0 三项）
+
+### P0-1 指纹链路修复：同一 token 不再每次换设备身份
+
+- `FingerprintForAccount` 此前每次调用都 `uuid.NewString()` 生成 `OAI-Device-Id` / `OAI-Session-Id`，同一 token 每次请求都是「新设备」，上游视角等同 credential sharing。
+- 新增 `stableDeviceID`：由账号标识 SHA-1 确定性派生 UUID，**同一账号永远同一 did/sid**。
+- `secChUaFor` 不再硬编码 Chrome146，按 UA 真实品牌与主版本生成；`Sec-Ch-Ua-Full-Version` / `Full-Version-List` 同步按 UA 推导。
+- `Accept-Language` 改用指纹 profile 的真实值（此前固定 zh-CN，与 en-US 指纹矛盾）。
+
+### P0-2 403 分类
+
+- 新增 `upstream_forbidden`（Scope=account，403）：冷却 **30 分钟**并换号，不再落 default→transient 导致同一个号被反复选中反复 403。
+- `account_deactivated` / `deleted or deactivated` 归入 `auth_invalid`，走「待重登」而不是被当临时错误重试。
+
+### P0-3 验活不再把网络故障误杀成死号
+
+- `CheckValid`：能拿到上游 HTTP 状态码才算失败；纯传输层错误（超时/DNS/连接/TLS）**跳过判定**（视为存活），避免代理抖动就把号判死。
+- Backend 构建失败同样跳过而非判死。
+
+### 测试
+
+- 修复两处历史失败测试：`TestDownload` 改用合法 JPEG（下载层已统一转码）、`TestImageModelSlug`/`TestStartPayloadTextOnly` 期望对齐当前 `auto` 映射。
+
 ## 26.2
 
 **类型**：429 冷却重试 + 按账号分配出口 IP

@@ -65,9 +65,22 @@ func main() {
 		defer cancel()
 		be, err := backend.NewBackend(a.Token, a.FP, cfg.EffectiveProxy())
 		if err != nil {
+			// 建 Backend 失败多为代理/网络配置问题，不能据此判死号。
+			log.Printf("[Scheduler] 验活跳过（backend 构建失败）%s: %v", a.Email, err)
+			return true
+		}
+		verr := be.VerifyToken(acctCtx)
+		if verr == nil {
+			return true
+		}
+		// 能拿到上游 HTTP 状态码 = 账号层面的明确答复（401/403 等），按失败处理。
+		var sc interface{ UpstreamStatus() int }
+		if errors.As(verr, &sc) {
 			return false
 		}
-		return be.VerifyToken(acctCtx) == nil
+		// 纯传输层错误（超时/DNS/连接/TLS）：无法判定死活，跳过，避免把网络故障误杀成死号。
+		log.Printf("[Scheduler] 验活网络异常，跳过判定 %s: %v", a.Email, verr)
+		return true
 	}
 	// Relogin 钩子 = 额度探测复活（21.0 refresh.go 的机制）。
 	// 不是真的重新登录，而是 POST /backend-api/conversation/init 探测图片额度：

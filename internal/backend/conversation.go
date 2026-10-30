@@ -1,8 +1,11 @@
 package backend
 
 import (
+	"crypto/sha1"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -35,6 +38,7 @@ type Fingerprint struct {
 	SecChUa         string `json:"sec-ch-ua"`
 	SecChUaMobile   string `json:"sec-ch-ua-mobile"`
 	SecChUaPlatform string `json:"sec-ch-ua-platform"`
+	AcceptLanguage  string `json:"accept-language"`
 }
 
 // DefaultFingerprint 生成默认指纹。
@@ -51,8 +55,8 @@ func FingerprintForAccount(accountKey string) Fingerprint {
 	base := Fingerprint{
 		UserAgent:       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0",
 		Impersonate:     "chrome110",
-		OaiDeviceID:     uuid.NewString(),
-		OaiSessionID:    uuid.NewString(),
+		OaiDeviceID:     stableDeviceID(accountKey, "device"),
+		OaiSessionID:    stableDeviceID(accountKey, "session"),
 		SecChUa:         `"Microsoft Edge";v="143", "Chromium";v="143", "Not A(Brand";v="24"`,
 		SecChUaMobile:   "?0",
 		SecChUaPlatform: `"Windows"`,
@@ -64,6 +68,9 @@ func FingerprintForAccount(accountKey string) Fingerprint {
 	p := all[int(stableHash(accountKey))%len(all)]
 	base.UserAgent = p.UserAgent
 	base.Impersonate = p.Impersonate
+	if p.AcceptLanguage != "" {
+		base.AcceptLanguage = p.AcceptLanguage
+	}
 	base.SecChUa = secChUaFor(p)
 	if strings.Contains(p.UserAgent, "Macintosh") {
 		base.SecChUaPlatform = `"macOS"`
@@ -77,7 +84,75 @@ func FingerprintForAccount(accountKey string) Fingerprint {
 
 // secChUaFor Chrome 146 的 sec-ch-ua 头值。
 func secChUaFor(p fingerprint.Profile) string {
-	return `"Chromium";v="146", "Google Chrome";v="146", "Not-A.Brand";v="99"`
+	// 关键修复：此前无论 profile 是什么都返回 Chrome146，导致
+	// 「UA 写 Edge143/Mac，Sec-Ch-Ua 写 Chrome146」自相矛盾，被动风控可直接识别。
+	// 现在按 UA 的真实品牌与主版本号生成，保持请求头内部一致。
+	ua := p.UserAgent
+	major := "143"
+	if m := uaVersionRe.FindStringSubmatch(ua); len(m) > 1 {
+		major = m[1]
+	}
+	switch {
+	case strings.Contains(ua, "Edg/"):
+		return fmt.Sprintf(`"Microsoft Edge";v="%s", "Chromium";v="%s", "Not A(Brand";v="24"`, major, major)
+	case strings.Contains(ua, "OPR/"):
+		return fmt.Sprintf(`"Opera";v="%s", "Chromium";v="%s", "Not A(Brand";v="24"`, major, major)
+	case strings.Contains(ua, "Firefox/"):
+		return ""
+	default:
+		return fmt.Sprintf(`"Chromium";v="%s", "Google Chrome";v="%s", "Not-A.Brand";v="99"`, major, major)
+	}
+}
+
+// uaVersionRe 提取 UA 主版本号（Chrome/143.x、Edg/143.x、Firefox/135.x）。
+var uaVersionRe = regexp.MustCompile(`(?:Chrome|Chromium|Edg|OPR|Firefox)/(\d+)`)
+
+// acceptLanguage 返回与指纹一致的语言头（此前硬编码 zh-CN，与 en-US 指纹自相矛盾）。
+func (b *Backend) acceptLanguage() string {
+	if v := strings.TrimSpace(b.fp.AcceptLanguage); v != "" {
+		return v
+	}
+	return "en-US,en;q=0.9"
+}
+
+// fullVersionHeader Sec-Ch-Ua-Full-Version，按 UA 主版本推导（此前硬编码 143）。
+func (b *Backend) fullVersionHeader() string {
+	v := uaMajorVersion(b.fp.UserAgent)
+	return fmt.Sprintf("\"%s.0.0.0\"", v)
+}
+
+// fullVersionListHeader Sec-Ch-Ua-Full-Version-List，品牌与 UA 保持一致。
+func (b *Backend) fullVersionListHeader() string {
+	v := uaMajorVersion(b.fp.UserAgent)
+	full := v + ".0.0.0"
+	ua := b.fp.UserAgent
+	switch {
+	case strings.Contains(ua, "Edg/"):
+		return fmt.Sprintf(`"Microsoft Edge";v="%s", "Chromium";v="%s", "Not A(Brand";v="24.0.0.0"`, full, full)
+	case strings.Contains(ua, "OPR/"):
+		return fmt.Sprintf(`"Opera";v="%s", "Chromium";v="%s", "Not A(Brand";v="24.0.0.0"`, full, full)
+	default:
+		return fmt.Sprintf(`"Chromium";v="%s", "Google Chrome";v="%s", "Not-A.Brand";v="99.0.0.0"`, full, full)
+	}
+}
+
+// uaMajorVersion 取 UA 主版本号，取不到时回退 143。
+func uaMajorVersion(ua string) string {
+	if m := uaVersionRe.FindStringSubmatch(ua); len(m) > 1 {
+		return m[1]
+	}
+	return "143"
+}
+
+// stableDeviceID 由账号标识确定性派生 OAI-Device-Id / OAI-Session-Id。
+// 关键修复：此前每次调用都 uuid.NewString()，同一 token 每次请求换设备ID，
+// 上游视角等于「token 被搬到另一台机器」，极易判 credential sharing 并 revoke。
+func stableDeviceID(accountKey, kind string) string {
+	sum := sha1.Sum([]byte("chat2api-did:" + kind + ":" + accountKey))
+	b := sum[:16]
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // stableHash FNV-1a 32-bit（与 PoW 同族算法，纯本地无依赖）。
@@ -133,15 +208,15 @@ func (b *Backend) SessionHeaders() http.Header {
 	h.Set("User-Agent", b.fp.UserAgent)
 	h.Set("Origin", b.BaseURL)
 	h.Set("Referer", b.BaseURL+"/")
-	h.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8,en-US;q=0.7")
+	h.Set("Accept-Language", b.acceptLanguage())
 	h.Set("Cache-Control", "no-cache")
 	h.Set("Pragma", "no-cache")
 	h.Set("Priority", "u=1, i")
 	h.Set("Sec-Ch-Ua", b.fp.SecChUa)
 	h.Set("Sec-Ch-Ua-Arch", `"x86"`)
 	h.Set("Sec-Ch-Ua-Bitness", `"64"`)
-	h.Set("Sec-Ch-Ua-Full-Version", `"143.0.3650.96"`)
-	h.Set("Sec-Ch-Ua-Full-Version-List", `"Microsoft Edge";v="143.0.3650.96", "Chromium";v="143.0.7499.147", "Not A(Brand";v="24.0.0.0"`)
+	h.Set("Sec-Ch-Ua-Full-Version", b.fullVersionHeader())
+	h.Set("Sec-Ch-Ua-Full-Version-List", b.fullVersionListHeader())
 	h.Set("Sec-Ch-Ua-Mobile", b.fp.SecChUaMobile)
 	h.Set("Sec-Ch-Ua-Model", `""`)
 	h.Set("Sec-Ch-Ua-Platform", b.fp.SecChUaPlatform)
@@ -251,23 +326,23 @@ func ImageModelSlug(model string) string {
 // （对等 _prepare_image_conversation:1156-1177，字段 1:1）。
 func PrepareImagePayload(prompt, model string) map[string]any {
 	return map[string]any{
-		"action":                  "next",
-		"fork_from_shared_post":   false,
-		"parent_message_id":       uuid.NewString(),
-		"model":                   ImageModelSlug(model),
-		"client_prepare_state":    "success",
-		"timezone_offset_min":     -480,
-		"timezone":                "Asia/Shanghai",
-		"conversation_mode":       map[string]any{"kind": "primary_assistant"},
-		"system_hints":            []string{"picture_v2"},
+		"action":                "next",
+		"fork_from_shared_post": false,
+		"parent_message_id":     uuid.NewString(),
+		"model":                 ImageModelSlug(model),
+		"client_prepare_state":  "success",
+		"timezone_offset_min":   -480,
+		"timezone":              "Asia/Shanghai",
+		"conversation_mode":     map[string]any{"kind": "primary_assistant"},
+		"system_hints":          []string{"picture_v2"},
 		"partial_query": map[string]any{
 			"id":      uuid.NewString(),
 			"author":  map[string]any{"role": "user"},
 			"content": map[string]any{"content_type": "text", "parts": []string{prompt}},
 		},
-		"supports_buffering":      true,
-		"supported_encodings":     []string{"v1"},
-		"client_contextual_info":  map[string]any{"app_name": "chatgpt.com"},
+		"supports_buffering":     true,
+		"supported_encodings":    []string{"v1"},
+		"client_contextual_info": map[string]any{"app_name": "chatgpt.com"},
 	}
 }
 
@@ -329,22 +404,22 @@ func StartImagePayload(prompt, model string, references []ImageReference) map[st
 	return map[string]any{
 		"action": "next",
 		"messages": []any{map[string]any{
-			"id":         uuid.NewString(),
-			"author":     map[string]any{"role": "user"},
+			"id":          uuid.NewString(),
+			"author":      map[string]any{"role": "user"},
 			"create_time": float64(time.Now().UnixMilli()) / 1000.0,
-			"content":    content,
-			"metadata":   metadata,
+			"content":     content,
+			"metadata":    metadata,
 		}},
-		"parent_message_id":              uuid.NewString(),
-		"model":                          ImageModelSlug(model),
-		"client_prepare_state":           "sent",
-		"timezone_offset_min":            -480,
-		"timezone":                       "Asia/Shanghai",
-		"conversation_mode":              map[string]any{"kind": "primary_assistant"},
-		"enable_message_followups":       true,
-		"system_hints":                   []string{"picture_v2"},
-		"supports_buffering":             true,
-		"supported_encodings":            []string{"v1"},
+		"parent_message_id":        uuid.NewString(),
+		"model":                    ImageModelSlug(model),
+		"client_prepare_state":     "sent",
+		"timezone_offset_min":      -480,
+		"timezone":                 "Asia/Shanghai",
+		"conversation_mode":        map[string]any{"kind": "primary_assistant"},
+		"enable_message_followups": true,
+		"system_hints":             []string{"picture_v2"},
+		"supports_buffering":       true,
+		"supported_encodings":      []string{"v1"},
 		"client_contextual_info": map[string]any{
 			"is_dark_mode":      false,
 			"time_since_loaded": 1200,
@@ -361,7 +436,9 @@ func StartImagePayload(prompt, model string, references []ImageReference) map[st
 }
 
 // PreparePayloadJSON / StartPayloadJSON 序列化（测试用，键序无关比对）。
-func PreparePayloadJSON(prompt, model string) []byte    { return mustJSON(PrepareImagePayload(prompt, model)) }
+func PreparePayloadJSON(prompt, model string) []byte {
+	return mustJSON(PrepareImagePayload(prompt, model))
+}
 func StartPayloadJSON(prompt, model string, refs []ImageReference) []byte {
 	return mustJSON(StartImagePayload(prompt, model, refs))
 }
