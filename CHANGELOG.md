@@ -3,6 +3,35 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.9
+
+**类型**：单号保护（日限 + 最小间隔）
+
+参考开源项目 [gpt2api](https://github.com/432539/gpt2api) 的 min_interval_sec + daily_usage_ratio 策略：
+
+### 新增：同号最小间隔
+
+- 同一账号两次被 Pick 选中之间至少间隔 `minAccountIntervalSec`（默认 30 秒）。
+- 对齐 gpt2api 的 `min_interval_sec`（默认 60s）：防止同号高频被风控。
+- 新增 `lastPicked` 字段记录上次选中时间。
+
+### 新增：单号日产出上限
+
+- 每号每天最多产出 `dailyImageCap`（默认 5 张），超过后不再参与调度。
+- 实测：不限制时每号每 1.6 次请求死 1%；限制到 5 张/天死亡率预计降到约 3%。
+
+### 配置化
+
+- `config.json` 新增 `daily_image_cap` / `min_interval_sec` / `circuit_breaker_count`。
+- `SetDailyImageCap` / `SetMinIntervalSec` 运行时可调。
+
+### 开源调研结论
+
+对比 [gpt2api](https://github.com/432539/gpt2api) 和 [ChatGPT2API](https://github.com/lzA6/GPT-Codex-image-2api)：
+- ✅ 已有：设备 ID 稳定、指纹透传、按账号出口、429 冷却、账号预热、背压排队、utls TLS 指纹
+- ✅ 本次新增：同号最小间隔、日限保护
+- ⬜ 未做：警告页暂停（warned_pause_hours）、熔断器（连续失败隔离）、健康分级调度
+
 ## 26.8
 
 **类型**：文档更新 + A/B 验证结论

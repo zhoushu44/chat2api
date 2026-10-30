@@ -82,6 +82,13 @@ func NewServer(cfg *config.Config) *Server {
 		orch.Config.Proxy = cfg.EffectiveProxy()
 		orch.Config.MaxAttempts = cfg.Account.MaxAttempts
 		orch.Config.Concurrency = cfg.Account.Concurrency
+		// 单号保护参数
+		if cfg.DailyImageCap > 0 {
+			account.SetDailyImageCap(cfg.DailyImageCap)
+		}
+		if cfg.MinIntervalSec > 0 {
+			account.SetMinIntervalSec(cfg.MinIntervalSec)
+		}
 		// 按账号分配出口 IP：每个账号固定一个 warp 粘性会话出口。
 		eg := egress.New(cfg.Egress.PoolURL, cfg.Egress.APIKey)
 		eg.SetEnabled(cfg.Egress.Enabled)
