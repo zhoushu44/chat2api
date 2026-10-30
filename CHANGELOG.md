@@ -3,6 +3,69 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.0
+
+**类型**：账号保护体系完善 + 开源调研成果
+
+### 新增：熔断器（连续失败隔离）
+
+- 连续失败 5 次 → 隔离 30 秒 → 半开探测 3 次成功才恢复。
+- 对齐 ChatGPT2API 的 `circuit_breaker.py`（SharedBreakerStateStore）。
+- `BreakerAllows` 在 `Pool.Pick` 里拦截被熔断的号。
+- `BreakerRecordSuccess` / `BreakerRecordFailure` 在 orchestrator 成功/失败路径埋点。
+
+### 新增：单号日限 + 同号最小间隔（26.9 已实现，本版配置化）
+
+- `daily_image_cap`（默认 5）：每号每天最多产出 5 张。
+- `min_interval_sec`（默认 30）：同号两次请求最少间隔 30 秒。
+- `circuit_breaker_count`（默认 5）：连续失败熔断阈值。
+
+### 开源调研结论（2026-10-30）
+
+对比了 3 个活跃项目：
+- [lzA6/GPT-Codex-image-2api](https://github.com/lzA6/GPT-Codex-image-2api) v2.37.0 — 最先进，Python/FastAPI
+- [AuuCoder/gptGrok2api](https://github.com/AuuCoder/gptGrok2api) v1.2.1 — GPT+Grok 双平台
+- [LanQian528/chat2api](https://github.com/LanQian528/chat2api) — 已停更
+
+**我们已实现的（14/22 项）：**
+
+| 技术 | 状态 |
+|---|---|
+| 设备 ID 稳定（SHA-1 派生） | ✅ 26.3 |
+| 指纹完整透传（UA/语言/平台/国家） | ✅ 26.6~26.7 |
+| 按账号分配出口 IP（warp 粘性会话） | ✅ 26.2 |
+| utls TLS 指纹（bogdanfinn/tls-client） | ✅ 已有 |
+| 429 冷却换号（account_rate_limited） | ✅ 26.2 |
+| 403 分类隔离（upstream_forbidden） | ✅ 26.3 |
+| 验活不误杀（网络错误跳过） | ✅ 26.3 |
+| 账号预热（WarmPending） | ✅ 26.4 |
+| 背压排队（池满等 8 秒） | ✅ 26.4 |
+| 协议恢复改用账号出口 | ✅ 26.5 |
+| 手动触发验活恢复 | ✅ 26.5 |
+| 单号日限 | ✅ 26.9 |
+| 同号最小间隔 | ✅ 26.9 |
+| **熔断器（连续失败隔离）** | ✅ **27.0** |
+
+**尚未实现（8 项，按优先级排序）：**
+
+| 技术 | 来源 | 优先级 | 说明 |
+|---|---|---|---|
+| 账号养号系统（7 天 nurturing） | lzA6 config | HIGH | 新号前几天低频/无 API 调用 |
+| 健康分级调度（healthy/warm/risky） | lzA6 README | HIGH | 按风险分级路由流量 |
+| 异步恢复工作流 + ledger | lzA6 v2.37.0 | HIGH | 队列式 OTP 恢复 + 原子账本 |
+| FlareSolverr CF clearance 刷新 | lzA6 + gptGrok2api | HIGH | 自动解决 Cloudflare 挑战 |
+| 警告页暂停（warned_pause_hours） | gpt2api | MEDIUM | 收到警告页 → 暂停 24h |
+| 多邮箱源（22.do 等） | lzA6 commit | MEDIUM | 降低邮箱指纹聚类 |
+| 住宅 IP（kookeey） | lzA6 config | MEDIUM | 数据中心 IP 被部分平台拒绝 |
+| 寿命预测 | lzA6 README | LOW | 按使用模式预测剩余寿命 |
+
+### 关键发现
+
+- `account_deactivated` **无法解封**，社区共识是预防 + 补号，不是治疗。
+- 挂 warp + fp 透传后存活率从 0% 提升到 82~96%（A/B 验证）。
+- `min_interval_sec` 是 gpt2api 最核心的防封参数（默认 60s）。
+- 养号系统（7 天 nurturing）是 lzA6 最新的创新，新号前几天不调 API。
+
 ## 26.9
 
 **类型**：单号保护（日限 + 最小间隔）

@@ -89,6 +89,9 @@ func NewServer(cfg *config.Config) *Server {
 		if cfg.MinIntervalSec > 0 {
 			account.SetMinIntervalSec(cfg.MinIntervalSec)
 		}
+		if cfg.CircuitBreakerCount > 0 {
+			account.SetCircuitBreakerConfig(cfg.CircuitBreakerCount, 30, 3)
+		}
 		// 按账号分配出口 IP：每个账号固定一个 warp 粘性会话出口。
 		eg := egress.New(cfg.Egress.PoolURL, cfg.Egress.APIKey)
 		eg.SetEnabled(cfg.Egress.Enabled)

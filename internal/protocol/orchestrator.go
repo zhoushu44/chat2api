@@ -360,6 +360,7 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			}
 			o.Pool.Release(acc)
 			o.Pool.RecordSuccess(acc)
+			account.BreakerRecordSuccess(acc.Token)
 			stage := res.Stage
 			stage.AccountPickMs = pickMs
 			stage.ResolveMs = resolveMs
@@ -372,6 +373,7 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		f := failure.Classify(err, 0, err.Error())
 		o.Pool.Release(acc)
 		o.Pool.RecordFail(acc)
+		account.BreakerRecordFailure(acc.Token)
 		if isAuthFailure(f) {
 			// token 死号：除名（标失效+落盘+移池），不冷却、不重复选
 			o.deactivateAccount(acc, f.Code)

@@ -344,6 +344,10 @@ func (p *Pool) Pick(sel Selector) *Account {
 				continue
 			}
 		}
+		// 熔断器：连续失败达阈值的号跳过（对齐 ChatGPT2API circuit breaker）。
+		if !BreakerAllows(a.Token) {
+			continue
+		}
 			max := sel.MaxInflight
 			if max <= 0 {
 				max = 1
