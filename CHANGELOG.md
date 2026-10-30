@@ -3,6 +3,26 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.3
+
+**类型**：新号失效宽限期 + 403 重置 TLS 会话
+
+参考 basketikun/chatgpt2api 的两个关键防封机制：
+
+### 新号失效宽限期
+
+- 对齐 `_NEW_ACCOUNT_INVALID_GRACE_SECONDS = 10 * 60` 和 `_INVALID_CONFIRM_SECONDS = 30`。
+- `Account.ShouldDeferInvalid()`：新号入池 10 分钟内、首次失败、或 30 秒内连续失败时暂缓判死。
+- orchestrator auth 失败路径：`ShouldDeferInvalid()` 返回 true 时只冷却 60 秒放回池，不除名。
+- 比 `WarmPending`（完全不参与调度）更精细：允许参与调度但失败后有缓冲期。
+
+### 403 自动重置 TLS 会话
+
+- 对齐 `reset_session_status_codes: [403]`。
+- 新增 `resetBackend(acc)`：删除缓存的 backend，强制下次重建（新 TLS 握手）。
+- `isSessionResetFailure`：403/`upstream_forbidden` 时触发。
+- 避免旧会话指纹被上游持续标记。
+
 ## 27.2
 
 **类型**：生图后自动删除会话痕迹

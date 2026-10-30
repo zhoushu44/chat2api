@@ -96,6 +96,33 @@ func (a *Account) WarmExpired() bool {
 	return time.Since(time.Unix(a.CreatedAt, 0)) > warmupMaxAge
 }
 
+// 新号失效宽限期（对齐 basketikun _NEW_ACCOUNT_INVALID_GRACE_SECONDS）：
+// 新号入池后 10 分钟内即使验活失败也不立刻判死，给一个缓冲期。
+// 需连续 2 次失败且间隔超过 30 秒才标记失效。
+const (
+	newAccountGraceSecs = 10 * 60
+	invalidConfirmSecs  = 30
+)
+
+// ShouldDeferInvalid 判断是否应暂缓标记失效（宽限期内或首次失败）。
+// 返回 true 表示「不要急着判死，再给它一次机会」。
+func (a *Account) ShouldDeferInvalid() bool {
+	now := time.Now().Unix()
+	// 新号 10 分钟宽限期
+	if a.CreatedAt > 0 && now-a.CreatedAt < int64(newAccountGraceSecs) {
+		return true
+	}
+	// 首次失败（invalidCount <= 1）暂缓
+	if atomic.LoadInt64(&a.ImagesFail) <= 1 {
+		return true
+	}
+	// 30 秒内连续失败暂缓（可能是网络抖动）
+	if a.lastPicked > 0 && now-a.lastPicked < int64(invalidConfirmSecs) {
+		return true
+	}
+	return false
+}
+
 func (a *Account) Available() bool {
 	if a.Status == StatusLimited || a.Status == StatusDisabled {
 		return false

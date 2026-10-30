@@ -67,6 +67,26 @@ func isAuthFailure(f failure.ImageFailure) bool {
 	return f.Code == "auth_invalid"
 }
 
+// isSessionResetFailure 判断是否需要重置 TLS 会话（对齐 basketikun reset_session_status_codes: [403]）。
+// 收到 403 时旧会话指纹可能已被标记，重建连接用新 TLS 握手。
+func isSessionResetFailure(f failure.ImageFailure) bool {
+	return f.Code == "upstream_forbidden" || f.StatusCode == 403
+}
+
+// resetBackend 删除缓存的 backend，强制下次重建（新 TLS 握手）。
+func (o *Orchestrator) resetBackend(acc *account.Account) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	proxy := o.Config.Proxy
+	if o.Egress != nil {
+		if p := o.Egress.ProxyFor(acc.ID); p != "" {
+			proxy = p
+		}
+	}
+	cacheKey := acc.Token + "|" + proxy
+	delete(o.Backends, cacheKey)
+}
+
 // getBackend 取号池账号对应的 backend（懒创建，线程安全）。
 func (o *Orchestrator) getBackend(acc *account.Account) (*backend.Backend, error) {
 	o.mu.Lock()
@@ -383,13 +403,24 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		o.Pool.RecordFail(acc)
 		account.BreakerRecordFailure(acc.Token)
 		if isAuthFailure(f) {
-			// token 死号：除名（标失效+落盘+移池），不冷却、不重复选
+			// 新号失效宽限期：10 分钟内或首次失败暂缓判死（对齐 basketikun _should_defer_invalid_token）
+			if acc.ShouldDeferInvalid() {
+				// 不除名，只冷却后放回池子，给它再试一次的机会
+				o.Pool.Cooldown(acc, time.Now().Add(60*time.Second))
+				excluded[acc.Token] = true
+				continue
+			}
+			// 确认死号：除名（标失效+落盘+移池），不冷却、不重复选
 			o.deactivateAccount(acc, f.Code)
 			excluded[acc.Token] = true
 			continue
 		}
 		if !f.SwitchAccount() {
 			break
+		}
+		// 403 时重置 TLS 会话（对齐 basketikun reset_session_status_codes: [403]）
+		if isSessionResetFailure(f) {
+			o.resetBackend(acc)
 		}
 		// 冷却
 		o.Pool.Cooldown(acc, time.Now().Add(cooldownFor(f)))
