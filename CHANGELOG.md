@@ -3,6 +3,47 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 26.8
+
+**类型**：文档更新 + A/B 验证结论
+
+### A/B 验证结论（2026-10-30）
+
+在 WarpGate v11.0（`health=unknown` 实例可参与分配 + `sticky_minutes=60` + `min_available=20`）配合 chat2api 26.7（指纹完整透传 + 按账号分配出口 + 429 冷却 + 账号预热 + 背压排队）环境下，注册 50 个新号经三轮 64 并发压测：
+
+| 轮次 | 成功率 | 存活率 |
+|---|---|---|
+| T1 | 63/64 (98.4%) | 48/50 (96%) |
+| T2 | 63/64 (98.4%) | 46/50 (92%) |
+| T3 | 62/64 (96.9%) | 41/50 (82%) |
+
+对比历史基线：
+
+| 配置 | 存活率 | 关键差异 |
+|---|---|---|
+| 无 warp + 无 fp（13:20 批次） | **0%** | 全局单 IP，指纹割裂 |
+| 有 fp + 无 warp（15:30 批次） | **54%** | 指纹修复但出口仍单一 |
+| 有 fp + 有 warp（本次） | **82~96%** | 每号独立 warp 出口 + 完整指纹 |
+
+**结论：出口 IP 确认是主要因素，挂 warp 后死亡率降低 3~5 倍。**
+
+### 26.2~26.7 修复清单
+
+| 版本 | 修复内容 |
+|---|---|
+| 26.2 | 429 冷却重试（`account_rate_limited`，冷却 2 分钟换号）+ 按账号分配出口 IP（`internal/egress`）+ 设置页开关 |
+| 26.3 | P0-1 指纹割裂（`stableDeviceID` 按 SHA-1 派生，不再每次 `uuid.NewString`）+ P0-2 403 分类（`upstream_forbidden` 冷却 30 分钟）+ P0-3 验活不误杀（网络错误跳过判定）+ `sec-ch-ua`/`Full-Version`/`Accept-Language` 按 UA 推导 |
+| 26.4 | 账号预热（`WarmPending`，新号未验额度不参与调度，30 分钟 fail-open）+ 背压排队（池满等 8 秒而非瞬时 503）+ `/api/accounts` 拒绝空 token |
+| 26.5 | 协议恢复改用账号固定 warp 出口（避免同 IP 连续密码登录被判盗号）+ `POST /api/scheduler/run` 手动触发验活 |
+| 26.6 | 导出器新增 `fp` 透传（`egress_fingerprint` 完整对象 → `Account.FP`）|
+| 26.7 | 注册指纹补丁固化进镜像（`_http_engine.py` 输出完整指纹对象）|
+
+### WarpGate 配套
+
+WarpGate v11.0（[github.com/zhoushu44/WarpGate](https://github.com/zhoushu44/WarpGate)）：
+- `health=unknown` 实例可参与分配（池容量从 70 恢复到 100）
+- `sticky_minutes` 10→60、`min_available` 5→20
+
 ## 26.7
 
 **类型**：把注册指纹补丁固化进镜像

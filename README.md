@@ -1,3 +1,41 @@
+## 账号存活率与出口 IP（2026-10-30 实测）
+
+### 问题
+
+批量注册的 Free 账号死亡率极高：注册后几分钟内大面积返回 `account_deactivated`。
+
+### 根因（经代码审查 + A/B 验证确认）
+
+| 层级 | 问题 | 修复版本 |
+|---|---|---|
+| 指纹割裂 | 同一 token 每次请求 `uuid.NewString()` 换设备 ID → 上游判定 credential sharing | 26.3 |
+| 指纹头矛盾 | UA 写 Edge143 但 `sec-ch-ua` 硬编码 Chrome146 | 26.3 |
+| 403 无分类 | 403 落 `default→transient`，同一号被反复选中反复 403 | 26.3 |
+| 验活误杀 | 网络故障（超时/DNS）被当 auth 失败 → 标死号 | 26.3 |
+| 429 不换号 | 429 走 `upstream_rate_limited`（transient，不换号），请求直接失败 | 26.2 |
+| 出口 IP 单一 | 所有账号共用 `socks5://127.0.0.1:20001` → 高并发被限流 | 26.2 |
+| 指纹未导出 | 注册侧只写 `"chrome/chrome136"` 字符串，导出器不传 fp | 26.6~26.7 |
+| 新号即打 | `quota_unknown=true` 直接参与调度，最脆弱期被生图请求命中 | 26.4 |
+| 瞬时 503 | 池满时直接返回 `no_available_account`，不排队 | 26.4 |
+| 协议恢复同 IP | 恢复时用全局代理，3 次同 IP 密码登录被判盗号 | 26.5 |
+
+### A/B 验证
+
+50 个新号（挂 warp + fp 完整透传）经三轮 64 并发压测：
+
+```text
+T1: 存活 96%    T2: 存活 92%    T3: 存活 82%
+对比：无 warp 无 fp → 0%    有 fp 无 warp → 54%
+```
+
+### 配套
+
+WarpGate v11.0（[github.com/zhoushu44/WarpGate](https://github.com/zhoushu44/WarpGate)）：
+- `health=unknown` 实例可参与分配（池容量恢复 100%）
+- `sticky_minutes` 60 分钟（账号绑定出口更稳定）
+- `min_available` 20（压测时不被瞬间打空）
+
+设置页「账号策略」→「按账号分配出口 IP」开关控制。
 # ChatGPT2API（单镜像全功能版：Go 生图 + Python 注册引擎）
 
 > **一个镜像 = Go 主服务（生图/API） + Python regiforge（自动注册） + Chrome**。
