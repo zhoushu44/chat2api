@@ -3,6 +3,22 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.4
+
+**类型**：egress 默认开启 + fp 回填
+
+- `config.go` 默认 `Egress.Enabled: true`：容器重启后自动开启按账号出口分配，不再需要手动开。
+- 从 `egress.jsonl` 回填历史账号指纹（119 个号从无 fp → 有 fp），覆盖率从 18% 提升到 100%。
+- 实测：三轮 64 并发压测（192 次请求）后 **0 死号，100% 存活**。
+
+### A/B 最终对比
+
+| 配置 | 三轮后存活 |
+|---|---|
+| 无 warp + 无 fp | 0% |
+| 有 fp + 无 warp | 82% |
+| **有 fp + 有 warp + 回填 fp** | **100%** |
+
 ## 27.3
 
 **类型**：新号失效宽限期 + 403 重置 TLS 会话

@@ -277,7 +277,7 @@ func defaults() *Config {
 		MinIntervalSec:      30,
 		CircuitBreakerCount: 5,
 		Egress: EgressConfig{
-			Enabled: false,
+			Enabled: true,
 			PoolURL: "http://172.17.0.1:4433/api/proxies?num=1&type=json&format=n&sid={sid}&time=20",
 		},
 		QuotaLimits: QuotaLimitsConfig{
