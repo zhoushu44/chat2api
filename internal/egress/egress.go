@@ -46,7 +46,7 @@ func New(poolURL, apiKey string) *Service {
 	return &Service{
 		poolURL: strings.TrimSpace(poolURL),
 		apiKey:  strings.TrimSpace(apiKey),
-		ttl:     30 * time.Minute,
+		ttl:     5 * time.Minute,
 		client:  &http.Client{Timeout: 12 * time.Second},
 	}
 }
@@ -88,6 +88,7 @@ func SidFor(accountID string) string {
 }
 
 // ProxyFor 返回该账号应使用的代理地址；返回空串表示沿用全局代理。
+// 容量保护：如果池子可用代理不足，回落到全局代理而不是卡死。
 func (s *Service) ProxyFor(accountID string) string {
 	if s == nil || accountID == "" {
 		return ""
@@ -107,7 +108,8 @@ func (s *Service) ProxyFor(accountID string) string {
 		// 取不到就退回全局代理，不阻断主流程
 		return ""
 	}
-	s.cache.Store(sid, &entry{proxy: proxy, exp: time.Now().Add(s.ttl)})
+	// 缩短 TTL：5 分钟而非 30 分钟，让代理更快回收给其他账号用
+	s.cache.Store(sid, &entry{proxy: proxy, exp: time.Now().Add(5 * time.Minute)})
 	return proxy
 }
 
