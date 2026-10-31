@@ -173,3 +173,53 @@ func (s *Service) Reset() {
 	}
 	s.cache = sync.Map{}
 }
+
+// Release 释放账号占用的 warp 池会话（避免 in_use 泄漏）。
+// warp 池的 /api/proxies 是「获取=占用」，需要调 /api/pool/release 释放。
+// 请求完成后调用，best-effort 不阻断主流程。
+func (s *Service) Release(accountID string) {
+	if s == nil || accountID == "" {
+		return
+	}
+	if !s.Enabled() || !s.Configured() {
+		return
+	}
+	sid := SidFor(accountID)
+	// 从缓存中删除（下次取会重新获取）
+	s.cache.Delete(sid)
+	// 异步通知 warp 池释放
+	go s.callRelease(sid)
+}
+
+func (s *Service) callRelease(sid string) {
+	target := s.poolURL
+	// 把 /api/proxies 替换为 /api/pool/release
+	target = strings.Replace(target, "/api/proxies", "/api/pool/release", 1)
+	// 移除 num/format 等不需要的参数，保留 sid
+	if u, err := url.Parse(target); err == nil {
+		q := u.Query()
+		q.Set("sid", sid)
+		q.Del("num")
+		q.Del("format")
+		q.Del("type")
+		q.Del("time")
+		u.RawQuery = q.Encode()
+		target = u.String()
+	}
+	req, err := http.NewRequest(http.MethodPost, target, nil)
+	if err != nil {
+		return
+	}
+	if s.apiKey != "" {
+		if strings.HasPrefix(strings.ToLower(s.apiKey), "bearer ") {
+			req.Header.Set("Authorization", s.apiKey)
+		} else {
+			req.Header.Set("X-API-Key", s.apiKey)
+		}
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return
+	}
+	resp.Body.Close()
+}

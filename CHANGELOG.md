@@ -3,6 +3,19 @@
 本文件记录 Go 版 `chatgpt2api` 的版本变更。
 版本号同时维护在三处，**必须保持一致**：git tag / `VERSION` / `.github/workflows/docker-publish.yml` 的 `TAG_MAJOR`。
 
+## 27.5
+
+**类型**：修复 warp 池会话泄漏（根因：取代理后不释放）
+
+**问题**：egress `ProxyFor` 每次调用 `GET /api/proxies` 占用一个 warp 实例（标记 `in_use`），
+但请求完成后从未调用 `/api/pool/release` 释放，导致 100 个实例全部 `in_use`，
+后续请求报 `P0001 无可用代理`。
+
+**修复**：
+- `egress.Service` 新增 `Release(accountID)`：异步调 `POST /api/pool/release?sid=...` 释放会话。
+- orchestrator 成功/失败路径均调用 `Egress.Release(acc.ID)`。
+- 缓存也同步删除，下次取会重新获取。
+
 ## 27.4
 
 **类型**：egress 默认开启 + fp 回填

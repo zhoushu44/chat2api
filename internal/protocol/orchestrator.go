@@ -381,6 +381,10 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 			o.Pool.Release(acc)
 			o.Pool.RecordSuccess(acc)
 			account.BreakerRecordSuccess(acc.Token)
+			// 释放 warp 池会话（避免 in_use 泄漏）
+			if o.Egress != nil {
+				o.Egress.Release(acc.ID)
+			}
 			// 生图成功后删除上游会话痕迹（对齐 basketikun image_remove_conversation_after_result）
 			if res.ConversationID != "" {
 				go func(b *backend.Backend, cid string) {
@@ -402,6 +406,10 @@ func (o *Orchestrator) generateSingle(ctx context.Context, req GenerateRequest, 
 		o.Pool.Release(acc)
 		o.Pool.RecordFail(acc)
 		account.BreakerRecordFailure(acc.Token)
+		// 释放 warp 池会话（避免 in_use 泄漏）
+		if o.Egress != nil {
+			o.Egress.Release(acc.ID)
+		}
 		if isAuthFailure(f) {
 			// 新号失效宽限期：10 分钟内或首次失败暂缓判死（对齐 basketikun _should_defer_invalid_token）
 			if acc.ShouldDeferInvalid() {
