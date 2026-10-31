@@ -192,24 +192,18 @@ func (s *Service) Release(accountID string) {
 }
 
 func (s *Service) callRelease(sid string) {
-	target := s.poolURL
-	// 把 /api/proxies 替换为 /api/pool/release
-	target = strings.Replace(target, "/api/proxies", "/api/pool/release", 1)
-	// 移除 num/format 等不需要的参数，保留 sid
-	if u, err := url.Parse(target); err == nil {
-		q := u.Query()
-		q.Set("sid", sid)
-		q.Del("num")
-		q.Del("format")
-		q.Del("type")
-		q.Del("time")
-		u.RawQuery = q.Encode()
-		target = u.String()
+	// warp 池的 /api/pool/release 需要 POST body {"session_id":"xxx"}
+	target := strings.Replace(s.poolURL, "/api/proxies", "/api/pool/release", 1)
+	// 清理 query params，只保留基础 URL
+	if idx := strings.Index(target, "?"); idx > 0 {
+		target = target[:idx]
 	}
-	req, err := http.NewRequest(http.MethodPost, target, nil)
+	body := fmt.Sprintf(`{"session_id":"%s"}`, sid)
+	req, err := http.NewRequest(http.MethodPost, target, strings.NewReader(body))
 	if err != nil {
 		return
 	}
+	req.Header.Set("Content-Type", "application/json")
 	if s.apiKey != "" {
 		if strings.HasPrefix(strings.ToLower(s.apiKey), "bearer ") {
 			req.Header.Set("Authorization", s.apiKey)
