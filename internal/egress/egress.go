@@ -150,6 +150,8 @@ func (s *Service) fetch(sid string) (string, error) {
 			Proxies []struct {
 				Proxy          string `json:"proxy"`
 				ProxyWhitelist string `json:"proxy_whitelist"`
+				Username       string `json:"username"`
+				Password       string `json:"password"`
 				ExpiresAt      string `json:"expires_at"`
 			} `json:"proxies"`
 		} `json:"data"`
@@ -165,7 +167,23 @@ func (s *Service) fetch(sid string) (string, error) {
 	if out == "" {
 		out = p.ProxyWhitelist
 	}
+	// warp 池的代理需要认证，把 username:password 注入到 URL 里
+	// socks5://host:port → socks5://username:password@host:port
+	if p.Username != "" && p.Password != "" && out != "" {
+		out = injectProxyAuth(out, p.Username, p.Password)
+	}
 	return out, nil
+}
+
+// injectProxyAuth 把认证信息注入到代理 URL 里。
+// socks5://host:port → socks5://user:pass@host:port
+func injectProxyAuth(proxyURL, user, pass string) string {
+	u, err := url.Parse(proxyURL)
+	if err != nil {
+		return proxyURL
+	}
+	u.User = url.UserPassword(user, pass)
+	return u.String()
 }
 
 // Reset 清空缓存（切换开关或换池时调用）。
